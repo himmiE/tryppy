@@ -1,5 +1,8 @@
 import os
 import pathlib
+import numpy as np
+
+from src.Model import Model
 
 
 class Segmentation:
@@ -15,12 +18,20 @@ class Segmentation:
     def get_data_path(self):
         return self.data_path
 
+    def load_image_data(self, custom_data_path=None):
+        if not custom_data_path:
+            images = np.load(self.data_path)
+        else:
+            images = np.load(custom_data_path)
+        return images
+
     def change_model(self, model_name="default"):
         self.model_name = model_name
         self.model = self.load_model()
 
     def run(self, verbose=1):
-        self.model.generate_masks()
+        images = self.load_image_data()
+        self.model.predict(images)
 
     def info(self):
         model_loaded = ""
@@ -38,6 +49,6 @@ class Segmentation:
         return
 
     def load_model(self):
-        filename = os.getcwd() + "/" + self.model_name
+        self.model = Model(self.model_name)
+        self.model.load_model()
 
-    def  load_data(self, datasource="default"):

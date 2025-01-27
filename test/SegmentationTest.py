@@ -4,7 +4,7 @@ from src.Segmentation import Segmentation
 
 
 class SegmentationTest(unittest.TestCase):
-    def prediction_test(self):
+    def test_prediction(self):
 
         segmentation = Segmentation()
         segmentation.set_data_path("test/resources/test_data/test_images.npy")

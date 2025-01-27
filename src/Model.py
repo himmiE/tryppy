@@ -4,14 +4,17 @@ import keras
 from keras import layers
 import tensorflow as tf
 from keras.src.optimizers import Adam
+import pathlib
 
 
 class Model:
     def __init__(self, model_name="default", verbose=1):
-        current_dir = os.path.abspath(__file__).parent.resolve()
-        config_path = current_dir + r"/resources/" + model_name + ".json"
+        current_dir = pathlib.Path(__file__).parent
+        model_filename = r"/resources/" + model_name + ".json"
+        config_path = current_dir / model_filename
         self.model_name = model_name
-        self.config = None
+        with open(config_path) as f:
+            self.config = json.load(f)
         self.weights_path = ""
         self.model = None
 
@@ -76,12 +79,12 @@ class Model:
         return model
 
     def load_model(self):
-        model = self.build_unet_model()
+        unet = self.build_unet_model()
         metrics = [keras.metrics.BinaryIoU(target_class_ids=[0, 1], threshold=0.5)]
-        model.compile(optimizer=Adam(), loss=keras.losses.BinaryCrossentropy(from_logits=False),
+        unet.compile(optimizer=Adam(), loss=keras.losses.BinaryCrossentropy(from_logits=False),
                              metrics=metrics)
-        model.load_weights(self.weights_path)
-        self.model = model
+        unet.load_weights(self.config["weights_path"])
+        self.unet = unet
         return
 
     def predict(self, images):

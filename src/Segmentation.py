@@ -8,12 +8,15 @@ from src.Model import Model
 class Segmentation:
     def __init__(self, model_name="default", data_path=""):
         self.model_name = model_name
-        self.model = self.load_model()
+        self.model = None
+        self.load_model()
         self.data_path = data_path
 
     def set_data_path(self, data_path):
-        if os.path.isdir(data_path):
+        if os.path.isfile(data_path):
             self.data_path = data_path
+        else:
+            Exception(f"given data_path is not a directory: {data_path}")
 
     def get_data_path(self):
         return self.data_path
@@ -31,7 +34,8 @@ class Segmentation:
 
     def run(self, verbose=1):
         images = self.load_image_data()
-        self.model.predict(images)
+        result = self.model.predict(images)
+        return result
 
     def info(self):
         model_loaded = ""

@@ -1,5 +1,4 @@
 import json
-import os
 import keras
 from keras import layers
 import tensorflow as tf
@@ -10,15 +9,16 @@ import pathlib
 class Model:
     def __init__(self, model_name="default", verbose=1):
         current_dir = pathlib.Path(__file__).parent
-        model_filename = r"/resources/" + model_name + ".json"
-        config_path = current_dir / model_filename
+        model_dir = current_dir / "resources" / "models" / model_name
+        config_path = model_dir / "config.json"
+        self.weights_path = model_dir / "model_data.weights.h5"
         self.model_name = model_name
-        with open(config_path) as f:
-            self.config = json.load(f)
-        self.weights_path = ""
-        self.model = None
+        #with open(config_path) as f:
+        #    self.config = json.load(f)
+        #self.model = None
+        self.unet = None
 
-        if verbose > 1:
+        '''if verbose > 1:
             if os.path.isfile(config_path):
                 print(f"Found corresponding config-file for model: {self.model_name}")
                 with open(config_path) as f:
@@ -30,7 +30,7 @@ class Model:
                 print(f"No corresponding config-file found for model: {self.model_name}.")
                 print(f"Please ensure that the desired config-file is at the given location: {config_path}"
                       f"Please ensure that the model_name is correct."
-                      f"If you are not using your own config file for training, leave model_name at default.")
+                      f"If you are not using your own config file for training, leave model_name at default.")'''
 
 
     def double_conv_block(self, x, n_filters):
@@ -83,11 +83,11 @@ class Model:
         metrics = [keras.metrics.BinaryIoU(target_class_ids=[0, 1], threshold=0.5)]
         unet.compile(optimizer=Adam(), loss=keras.losses.BinaryCrossentropy(from_logits=False),
                              metrics=metrics)
-        unet.load_weights(self.config["weights_path"])
+        unet.load_weights(self.weights_path)
         self.unet = unet
         return
 
     def predict(self, images):
-        predictions = self.model.predict(tf.stack(images))
+        predictions = self.unet.predict(tf.stack(images))
         predictions = predictions > 0.5
         return predictions

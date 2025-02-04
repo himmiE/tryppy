@@ -1,6 +1,3 @@
 {
-  "default":
-  {
-    "weights": "resources\\models\\default\\unet_model_30May24_Combined.weights.h5"
-  }
+  "weights_path": "resources\\models\\default\\unet_model_30May24_Combined.weights.h5"
 }

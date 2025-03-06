@@ -1,31 +1,51 @@
+import glob
 import math
+import os.path
 
 import numpy as np
 import scipy
 from scipy.integrate import quad
 import skimage
-from optree.integration import numpy
 from scipy.signal import find_peaks
 import cv2 #opencv-python
+import warnings
+
+from spatial_efd import spatial_efd
+
 from src.feature_extraction_visualizer import FeatureExtractionVisualizer
 
 
 class FeatureExtraction:
-    def __int__(self, image_size, source_images):
-        self.images_size = image_size
-        self.visualizer = FeatureExtractionVisualizer("")
-        self.source_images = ""
+    def __init__(self, path):
+        self.path = path
+        self.mask_images = self.get_src_images(path)
+        pass
 
     def normalize_coordinates(self, xt, yt):
-        # Calculate the total length of the boundary
         lengths = np.sqrt(np.diff(xt) ** 2 + np.diff(yt) ** 2)
         total_length = np.sum(lengths)
-
-        # Normalize coordinates
         xt_normalized = xt / total_length
         yt_normalized = yt / total_length
-
         return xt_normalized, yt_normalized
+
+    def get_window_from_list(self, list_len, index, window_size):
+        half_window = window_size // 2
+        rest = window_size % 2
+        indices = range(index-half_window, index+half_window+rest)
+        result = [i % list_len for i in indices]
+        return result
+
+    def get_outline_from_image(self, image_path):
+        # Load image and get contour
+        image = skimage.io.imread(image_path)
+        image = skimage.morphology.area_closing(image, 10)
+
+        contour = skimage.measure.find_contours(image, 0.8)[0]
+        coeffs = spatial_efd.CalculateEFD(contour[:, 0], contour[:, 1], harmonics=20)
+        xt, yt = spatial_efd.inverse_transform(coeffs, harmonic=20, n_coords=10000)
+
+        return xt, yt
+
 
     def calculate_curvature(self, xt, yt, window_size=3, show=0):
         # Normalize the coordinates
@@ -40,15 +60,8 @@ class FeatureExtraction:
 
         for i in range(len(xt)):
             # Define the window range
-            if i < half_window:
-                x_window = np.concatenate((xt[-(half_window - i):], xt[:i + half_window + 1]))
-                y_window = np.concatenate((yt[-(half_window - i):], yt[:i + half_window + 1]))
-            elif i >= len(xt) - half_window:
-                x_window = np.concatenate((xt[i - half_window:], xt[:(half_window - (len(xt) - i - 1))]))
-                y_window = np.concatenate((yt[i - half_window:], yt[:(half_window - (len(yt) - i - 1))]))
-            else:
-                x_window = xt[i - half_window:i + half_window + 1]
-                y_window = yt[i - half_window:i + half_window + 1]
+            x_window = xt[self.get_window_from_list(len(xt), i, window_size)]
+            y_window = yt[self.get_window_from_list(len(yt), i, window_size)] #ToDO thorough testing!
 
             # Calculate first derivatives
             dx = np.gradient(x_window)
@@ -59,7 +72,7 @@ class FeatureExtraction:
             ddy = np.gradient(dy)
 
             # Calculate curvature at the central point of the window
-            denominator = np.power((dx[half_window] ** 2 + dy[half_window] ** 2), 1.5)
+            denominator = np.power((dx[half_window] ** 2 + dy[half_window] ** 2), 1.5) # magic nr?
             if denominator != 0:
                 curvature = (dx[half_window] * ddy[half_window] - dy[half_window] * ddx[half_window]) / denominator
             else:
@@ -68,48 +81,48 @@ class FeatureExtraction:
 
         return np.array(curvatures)
 
-    def find_relevant_minima(self, xt, yt, show=0):
+    def find_relevant_minima(self, xt, yt, first_threshold=-20, second_threshold=-45, min_distance=4000, show=0):
+        min_value_below_second_threshold = None
+        smallest_remaining_index = None
+
         curvatures = self.calculate_curvature(xt, yt)
         minima_indices, _ = find_peaks(-curvatures)
         minima_values = curvatures[minima_indices]
 
-        # Filter minima above -20
-        filtered_minima_indices = minima_indices[minima_values <= -20]
-        filtered_minima_values = minima_values[minima_values <= -20]
+        # Find minima below first threshold
+        first_threshold_indices = minima_indices[minima_values <= first_threshold]
+        first_threshold_values = minima_values[minima_values <= first_threshold]
 
-        # Find minima below -50
-        below_neg_50_indices = filtered_minima_indices[filtered_minima_values <= -45]
-        below_neg_50_values = filtered_minima_values[filtered_minima_values <= -45]
+        # Find minima below second threshold
+        second_threshold_indices = first_threshold_indices[first_threshold_values <= second_threshold]
+        second_threshold_values = first_threshold_values[first_threshold_values <= second_threshold]
 
-        if len(below_neg_50_values) > 0:
-            smallest_below_neg_50_index = below_neg_50_indices[np.argmin(below_neg_50_values)]
-        else:
-            smallest_below_neg_50_index = None
+        if len(second_threshold_values) > 0:
+            min_value_below_second_threshold = second_threshold_indices[np.argmin(second_threshold_values)]
 
         def is_far_enough(idx1, idx2, threshold):
             distance_forward = (idx2 - idx1) % len(xt)
             distance_backward = (idx1 - idx2) % len(xt)
-            return distance_forward >= threshold and distance_backward >= threshold
+            smaller_distance = min(distance_backward, distance_forward)
+            return smaller_distance >= threshold
 
-        # Find other minima below -20 that are at least 350 coordinates away
-        remaining_indices = [idx for idx in filtered_minima_indices if
-                             smallest_below_neg_50_index is None or is_far_enough(idx, smallest_below_neg_50_index,
-                                                                                  4000)]
+        # Find other minima below first threshold that are some minimum distance away
+        remaining_indices = [idx for idx in first_threshold_indices if
+                             min_value_below_second_threshold is None
+                             or is_far_enough(idx, min_value_below_second_threshold,min_distance)]
         remaining_values = curvatures[remaining_indices]
 
         if len(remaining_values) > 0:
             smallest_remaining_index = remaining_indices[np.argmin(remaining_values)]
-        else:
-            smallest_remaining_index = None
 
-        return smallest_below_neg_50_index, smallest_remaining_index
+        return min_value_below_second_threshold, smallest_remaining_index
 
     def get_midline(self, mask, prefilter_radius, min_length_pruning, show=0):
         pth_skeleton = self.mask_pruned_skeleton(mask, prefilter_radius,
-                                            min_length_pruning)  # MAGIC NUMBERS: Radius for prefiltering, length for pruning branches
+                                            min_length_pruning)  # MAGIC NUMBERS: Radius for pre-filtering, length for pruning branches
         neighbours = scipy.ndimage.convolve(pth_skeleton, [[1, 1, 1], [1, 0, 1], [1, 1, 1]]) * pth_skeleton
         termini_count = np.count_nonzero(neighbours == 1)
-        midline_count = np.count_nonzero(neighbours == 2)
+        midline_count = np.count_nonzero(neighbours == 2) # not used?
         branches_count = np.count_nonzero(neighbours > 2)
 
         # trace, if a single line (two termini, zero branches)
@@ -147,7 +160,7 @@ class FeatureExtraction:
         skeleton = skeleton.astype(np.uint8)
         # make a neighbour count skeleton, 1 = terminus, 2 = arm, >2 = branch point
         neighbours = scipy.ndimage.convolve(skeleton, [[1, 1, 1], [1, 0, 1], [1, 1, 1]]) * skeleton
-        # filter for 1 neigbour only, ie terminus image, and use to list termini
+        # filter for 1 neighbour only, ie terminus image, and use to list termini
         termini = neighbours.copy()
         termini[termini > 1] = 0
         termini_y, termini_x = skimage.morphology.local_maxima(termini, indices=True, allow_borders=False)
@@ -158,7 +171,7 @@ class FeatureExtraction:
             v = neighbours[cy, cx]
             while length < prune_length + 2 and v > 0 and v < 3:
                 v = 0
-                # mark visited pixels with 2, if removeable (not a branch)
+                # mark visited pixels with 2, if removable (not a branch)
                 if neighbours[cy, cx] < 3:
                     skeleton[cy, cx] = 2
                 # for all neighbours...
@@ -181,7 +194,7 @@ class FeatureExtraction:
                 skeleton[skeleton == 2] = 0
             else:
                 skeleton[skeleton == 2] = 1
-        # reskeletonise, to handle messy branch points left over
+        # re-skeletonise, to handle messy branch points left over
         skeleton = skimage.morphology.medial_axis(skeleton, return_distance=False).astype(np.uint8)
         return skeleton
 
@@ -206,20 +219,12 @@ class FeatureExtraction:
         def euclidean_distance(p1, p2):
             return math.sqrt((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2)
 
-        closest_point = None
-        closest_distance_diff = float('inf')
-
-        for boundary_point in boundary:
-
-            current_distance = euclidean_distance(point, boundary_point)
-            distance_diff = abs(current_distance - distance)
-
-            if distance_diff < 1e-6:  # Allowing a small tolerance
-                return boundary_point
-
-            if distance_diff < closest_distance_diff:
-                closest_distance_diff = distance_diff
-                closest_point = boundary_point
+        boundary_distances = [abs(euclidean_distance(point, boundary_point)-distance) for boundary_point in boundary]
+        min_distance = min(boundary_distances)
+        min_distance_index = boundary_distances.index(min_distance)
+        closest_point = boundary[min_distance_index]
+        if closest_point > 1e-6:
+            warnings.warn("Closest point found on boundary is no exact match.")
 
         return closest_point  # Return the closest point if no exact match is found
 
@@ -228,29 +233,29 @@ class FeatureExtraction:
         closest_intersection = None
         min_distance = float('inf')
 
-        for i in range(len(boundary_x) - 1):
+        for i in range(len(boundary_x) - 1): # why not the last point?
             x1, y1 = boundary_x[i], boundary_y[i]
             x2, y2 = boundary_x[i + 1], boundary_y[i + 1]
 
             # Line equation for the boundary segment
-            A1 = y2 - y1
-            B1 = x1 - x2
-            C1 = A1 * x1 + B1 * y1
+            a1 = y2 - y1
+            b1 = x1 - x2
+            c1 = a1 * x1 + b1 * y1
 
             # Line equation for the normal
-            A2 = normal_y
-            B2 = -normal_x
-            C2 = A2 * x0 + B2 * y0
+            a2 = normal_y
+            b2 = -normal_x
+            c2 = a2 * x0 + b2 * y0
 
             # Determinant
-            det = A1 * B2 - A2 * B1
+            det = a1 * b2 - a2 * b1
 
             if abs(det) < 1e-10:
                 continue  # Lines are parallel, no intersection
 
             # Intersection coordinates
-            ix = (B2 * C1 - B1 * C2) / det
-            iy = (A1 * C2 - A2 * C1) / det
+            ix = (b2 * c1 - b1 * c2) / det
+            iy = (a1 * c2 - a2 * c1) / det
 
             # Check if intersection is within the boundary segment
             if min(x1, x2) <= ix <= max(x1, x2) and min(y1, y2) <= iy <= max(y1, y2):
@@ -334,3 +339,12 @@ class FeatureExtraction:
             intensity_sums.append(intensity_sum)
 
         return intensity_sums
+
+    def get_src_images(self, source_image_directory):
+        if os.path.isdir(source_image_directory):
+            image_filename_structure = f'{source_image_directory}/*.png'
+            all_files = glob.glob(image_filename_structure)
+            return all_files
+        else:
+            # Todo Throw exception
+            pass

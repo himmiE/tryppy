@@ -14,8 +14,8 @@ class FeatureExtractionVisualizer:
         self.input_folder = input_folder
         self.output_folder = output_folder
 
-    def get_base_images(self, filename=[], nr_images=2, set_seed=None):
-        if not filename:
+    def get_base_images(self, filenames=[], nr_images=2, set_seed=None):
+        if not filenames:
             if seed:
                 seed(set_seed)
             image_filename_structure = f'{self.input_folder}/*.png'
@@ -23,47 +23,38 @@ class FeatureExtractionVisualizer:
             sampled_files = sample(all_files, nr_images)
             return sampled_files
         else:
-            return filename
+            return filenames
 
-    def plot_curvature(self, curvature, filename=[], nr_images=2, set_seed=None):
+    def get_basic_plot_features(self):
+        # Todo reduce copy-pasting for plots
+        pass
 
-        images = self.get_base_images(filename=filename, nr_images=nr_images, set_seed=set_seed)
 
-        for image_path in images:
+    def plot_curvature(self, xt, yt, curvature, filename=[], nr_images=2, set_seed=None):
 
-            # Load image and get contour
-            image = skimage.io.imread(image_path)
-            image = skimage.morphology.area_closing(image, 10)
+        fig, axs = plt.subplots(1, 2, figsize=(15, 6))
 
-            contour = skimage.measure.find_contours(image, 0.8)[0]
+        # Spline Plot with curvature on spline line
+        sc = axs[0].scatter(xt, yt, c=curvature, cmap='viridis', label='Curvature')
+        fig.colorbar(sc, ax=axs[0], label='Curvature')
+        axs[0].legend()
+        axs[0].set_xlabel('X-axis')
+        axs[0].set_ylabel('Y-axis')
+        axs[0].set_title('Spline with Curvature')
+        axs[0].axis("equal")
 
-            coeffs = spatial_efd.CalculateEFD(contour[:, 0], contour[:, 1], harmonics=20)
-            norm_coeff, rotation = spatial_efd.normalize_efd(coeffs, size_invariant=True) # ToDO not used
-            xt, yt = spatial_efd.inverse_transform(coeffs, harmonic=20, n_coords=10000)
+        # Coordinates vs Curvature Plot
+        axs[1].plot(np.arange(len(curvature)), curvature, label='Curvature')
+        axs[1].set_xlabel('Coordinate Index')
+        axs[1].set_ylabel('Curvature')
+        axs[1].set_title('Curvature vs Coordinates')
+        axs[1].legend()
 
-            fig, axs = plt.subplots(1, 2, figsize=(15, 6))
-
-            # Spline Plot with curvature on spline line
-            sc = axs[0].scatter(xt, yt, c=curvature, cmap='viridis', label='Curvature')
-            fig.colorbar(sc, ax=axs[0], label='Curvature')
-            axs[0].legend()
-            axs[0].set_xlabel('X-axis')
-            axs[0].set_ylabel('Y-axis')
-            axs[0].set_title('Spline with Curvature')
-            axs[0].axis("equal")
-
-            # Coordinates vs Curvature Plot
-            axs[1].plot(np.arange(len(curvature)), curvature, label='Curvature')
-            axs[1].set_xlabel('Coordinate Index')
-            axs[1].set_ylabel('Curvature')
-            axs[1].set_title('Curvature vs Coordinates')
-            axs[1].legend()
-
-            plt.tight_layout()
-            plot_filename = os.path.join(self.output_folder, f"plot_{filename.split('.p')[0]}.png")
-            plt.show()
-            # plt.savefig(plot_filename)
-            plt.close()
+        plt.tight_layout()
+        plot_filename = os.path.join(self.output_folder, f"plot_{filename.split('.p')[0]}.png")
+        plt.show()
+        # plt.savefig(plot_filename)
+        plt.close()
 
     def plot_endpoints(self, curvature, filename=[], nr_images=2, set_seed=None):
         # Define the path to the KN folder

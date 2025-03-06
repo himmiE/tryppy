@@ -1,10 +1,9 @@
-import os
 import pathlib
 import unittest
 
 from numpy import mean
 
-from src.Segmentation import Segmentation
+from src.transformations.Segmentation import Segmentation
 
 
 class SegmentationTest(unittest.TestCase):

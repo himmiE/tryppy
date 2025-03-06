@@ -2,7 +2,7 @@ import os
 import pathlib
 import numpy as np
 
-from src.Model import Model
+from src.transformations.Model import Model
 
 
 class Segmentation:

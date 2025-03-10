@@ -35,17 +35,13 @@ class FeatureExtraction:
         result = [i % list_len for i in indices]
         return result
 
-    def get_outline_from_image(self, image_path):
-        # Load image and get contour
-        image = skimage.io.imread(image_path)
+    def get_contour(self, image):
         image = skimage.morphology.area_closing(image, 10)
-
         contour = skimage.measure.find_contours(image, 0.8)[0]
         coeffs = spatial_efd.CalculateEFD(contour[:, 0], contour[:, 1], harmonics=20)
         xt, yt = spatial_efd.inverse_transform(coeffs, harmonic=20, n_coords=10000)
 
         return xt, yt
-
 
     def calculate_curvature(self, xt, yt, window_size=3, show=0):
         # Normalize the coordinates
@@ -349,8 +345,8 @@ class FeatureExtraction:
             # Todo Throw exception
             pass
 
-    @classmethod
-    def run(self, images):
+    def run(self, images, save_contour_data=False, save_contour_image=False):
         for image in images:
-            outline = self.get_outline_from_image(image
-                                                  )
+            contour_x, contour_y = self.get_contour(image)
+            curvature = self.calculate_curvature(contour_x, contour_y)
+            smallest_below_neg_50, smallest_remaining = self.find_relevant_minima(contour_x, contour_y)

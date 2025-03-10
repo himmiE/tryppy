@@ -1,11 +1,8 @@
-import glob
 import os
-
 import numpy as np
 import skimage
 from matplotlib import pyplot as plt
 from spatial_efd import spatial_efd # spatial-efd for installation
-from random import sample, seed
 
 
 
@@ -14,23 +11,12 @@ class FeatureExtractionVisualizer:
         self.input_folder = input_folder
         self.output_folder = output_folder
 
-    def get_base_images(self, filenames=[], nr_images=2, set_seed=None):
-        if not filenames:
-            if seed:
-                seed(set_seed)
-            image_filename_structure = f'{self.input_folder}/*.png'
-            all_files = glob.glob(image_filename_structure)
-            sampled_files = sample(all_files, nr_images)
-            return sampled_files
-        else:
-            return filenames
-
     def get_basic_plot_features(self):
         # Todo reduce copy-pasting for plots
         pass
 
 
-    def plot_curvature(self, xt, yt, curvature, filename=[], nr_images=2, set_seed=None):
+    def plot_curvature(self, xt, yt, curvature, filename):
 
         fig, axs = plt.subplots(1, 2, figsize=(15, 6))
 
@@ -56,7 +42,7 @@ class FeatureExtractionVisualizer:
         # plt.savefig(plot_filename)
         plt.close()
 
-    def plot_endpoints(self, curvature, filename=[], nr_images=2, set_seed=None):
+    def plot_endpoints(self, curvature, filename, nr_images=2, set_seed=None):
         # Define the path to the KN folder
 
         images = self.get_base_images(filename=filename, nr_images=nr_images, set_seed=set_seed)
@@ -70,7 +56,6 @@ class FeatureExtractionVisualizer:
             contour = skimage.measure.find_contours(image, 0.8)[0]
 
             coeffs = spatial_efd.CalculateEFD(contour[:, 0], contour[:, 1], harmonics=20)
-            norm_coeff, rotation = spatial_efd.normalize_efd(coeffs, size_invariant=True) # ToDO not used
             xt, yt = spatial_efd.inverse_transform(coeffs, harmonic=20, n_coords=10000)
 
             # Calculate curvature

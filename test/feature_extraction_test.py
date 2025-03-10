@@ -27,8 +27,8 @@ class FeatureExtractionTest(unittest.TestCase):
     def test_outline(self):
         fe = self.feature_extraction
         outline_data_dir = pathlib.Path(__file__).parent / "resources/test_data/outline_data"
-        outline_1 = fe.get_outline_from_image(fe.mask_images[0])
-        outline_2 = fe.get_outline_from_image(fe.mask_images[1])
+        outline_1 = fe.get_contour(fe.mask_images[0])
+        outline_2 = fe.get_contour(fe.mask_images[1])
         np.savetxt(outline_data_dir/fe.mask_images[0].split("/")[-1] , outline_1) #np.loadtxt
 
 

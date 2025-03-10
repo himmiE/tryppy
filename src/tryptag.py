@@ -17,11 +17,11 @@ class Tryptag:
 
     def run(self, input_folder_name="input"):
         images = self.file_handler.get_input_files(input_folder_name)
-        '''if self.config['steps']['segmentation']['enabled']:
+        if self.config['steps']['segmentation']['enabled']:
             segmentation_result = Segmentation().run(images)
             if self.config['steps']['segmentation']['save_output']:
                 self.file_handler.save_images_to("segmented", segmentation_result)
-            images = segmentation_result'''
+            images = segmentation_result
 
         if self.config['steps']['instance_segmentation']['enabled']:
             instance_segmentation_result = InstanceSegmentation().run(images)
@@ -29,11 +29,16 @@ class Tryptag:
                 self.file_handler.save_images_to('instances', instance_segmentation_result)
             images = instance_segmentation_result
 
-        '''if self.config['steps']['feature_extraction']['enabled']:
-            features = FeatureExtraction.run(images)
-            if self.config['steps']['feature_extraction']['save_output']:
-                self.file_handler.save_images_to('features', features)
-            images = features'''
+        if self.config['steps']['feature_extraction']['enabled']:
+            if self.config['steps']['feature_extraction']['save_contour_image']:
+                save_contour_image = True
+            if self.config['steps']['feature_extraction']['save_contour_data']:
+                save_contour_data = True
+                #self.file_handler.save_images_to('features', features)
+            features = FeatureExtraction.run(images,
+                                             save_contour_data=save_contour_data,
+                                             save_contour_image=save_contour_image)
+            images = features
         return images
 
     def run_test(self, images):

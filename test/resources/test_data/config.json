@@ -1,0 +1,19 @@
+{
+  "model_name": "default",
+  "weights_path": "resources\\models\\default\\unet_model_30May24_Combined.weights.h5",
+  "steps": {
+    "segmentation": {
+      "enabled": true,
+      "save_output": true
+    },
+    "instance_segmentation": {
+      "enabled": true,
+      "save_output": true
+    },
+    "feature_extraction": {
+      "enabled": true,
+      "save_output": true
+    }
+  },
+  "output_dir": ""
+}

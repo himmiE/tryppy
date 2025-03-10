@@ -8,9 +8,9 @@ import pathlib
 
 class Model:
     def __init__(self, model_name="default", verbose=1):
-        current_dir = pathlib.Path(__file__).parent
+        current_dir = pathlib.Path(__file__).parent.parent
         model_dir = current_dir / "resources" / "models" / model_name
-        config_path = model_dir / "config.json"
+        #config_path = model_dir / "config.json"
         self.weights_path = model_dir / "model_data.weights.h5"
         self.model_name = model_name
         #with open(config_path) as f:
@@ -87,7 +87,7 @@ class Model:
         self.unet = unet
         return
 
-    def predict(self, images):
-        predictions = self.unet.predict(tf.stack(images))
+    def predict(self, image):
+        predictions = self.unet.predict(tf.stack(image))
         predictions = predictions > 0.5
         return predictions

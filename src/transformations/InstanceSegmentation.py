@@ -92,23 +92,24 @@ class InstanceSegmentation:
 
         return cleaned_image > 0
 
-    def create_segmentation_masks(self, mask_file_names, result_path):
-        for mask_file_name in mask_file_names:
-            mask = np.load(mask_file_name)
+    '''def run(self, mask_images):
+        segmentation_masks = {}
+        for mask_id, mask in mask_images:
             segmented_image = self.window_segmentation(mask)
             final_mask = self.cleanup_segmentation_mask(segmented_image)
             final_mask = final_mask * 255
             final_mask = final_mask.astype(np.uint8)
-            result_filename = os.path.join(result_path, mask_file_name.split('/')[-1])
-            np.save(str(result_filename), final_mask) #Todo currently breakes file instead of creating a new one
+            segmentation_masks[mask_id] = final_mask
+        return segmentation_masks'''
 
-    def run(self, data_path, result_path):
-        mask_file_names = self.get_mask_file_names(data_path)
-        segmentation_masks = self.create_segmentation_masks(mask_file_names, result_path)
+    def run(self, mask_images):
+        segmentation_masks = {}
+        for mask_id, mask in mask_images:
+            segmented_image = self.window_segmentation(mask)
+            final_mask = self.cleanup_segmentation_mask(segmented_image)
+            final_mask = final_mask * 255
+            final_mask = final_mask.astype(np.uint8)
+            segmentation_masks[mask_id] = final_mask
         return segmentation_masks
 
-    def get_mask_file_names(self, data_path):
-        mask_filenames_structure = f'{data_path}/*mask*.npy'
-        mask_file_names = glob.glob(mask_filenames_structure)
-        return mask_file_names
             

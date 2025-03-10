@@ -348,3 +348,9 @@ class FeatureExtraction:
         else:
             # Todo Throw exception
             pass
+
+    @classmethod
+    def run(self, images):
+        for image in images:
+            outline = self.get_outline_from_image(image
+                                                  )

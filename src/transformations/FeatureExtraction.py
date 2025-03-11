@@ -15,9 +15,7 @@ from spatial_efd import spatial_efd
 
 
 class FeatureExtraction:
-    def __init__(self, path):
-        self.path = path
-        self.mask_images = self.get_src_images(path)
+    def __init__(self):
         pass
 
     def normalize_coordinates(self, xt, yt):

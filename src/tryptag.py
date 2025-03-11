@@ -1,4 +1,6 @@
 import json
+import os
+import shutil
 
 from src.file_handler import FileHandler
 from src.transformations.FeatureExtraction import FeatureExtraction
@@ -9,7 +11,10 @@ from src.transformations.Segmentation import Segmentation
 class Tryptag:
     def __init__(self, datapath, config_filename = 'config.json'):
         config_path = datapath / config_filename
-        #ToDo if no config_file present make default
+
+        if not os.path.isfile(config_path):
+            default_config_path = "src/resources/default_config.json"
+            shutil.copyfile(default_config_path, config_path)
 
         with open(config_path, 'r') as config_file:
             self.config = json.load(config_file)
@@ -30,13 +35,14 @@ class Tryptag:
             images = instance_segmentation_result
 
         if self.config['tasks']['feature_extraction']['enabled']:
-            features = FeatureExtraction.run(images)
+            features = FeatureExtraction().run(images)
             for feature in features:
                 if self.config['tasks']['feature_extraction'][feature]['save_data']['enabled']:
                     self.file_handler.save_feature_data(feature, features[feature])
-                if self.config['tasks']['feature_extraction'][feature]['save_image']['enabled']:
-                    self.file_handler.save_feature_images(feature, features[feature])
-                images = features
+            if self.config['tasks']['feature_extraction']['save_image']['enabled']:
+                self.file_handler.save_feature_images(features)
+            images = features
+        #ToDo add classification
         return images
 
     def run_test(self, images):

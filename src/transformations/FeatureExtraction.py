@@ -12,7 +12,6 @@ import warnings
 
 from spatial_efd import spatial_efd
 
-from src.feature_extraction_visualizer import FeatureExtractionVisualizer
 
 
 class FeatureExtraction:
@@ -345,7 +344,7 @@ class FeatureExtraction:
             # Todo Throw exception
             pass
 
-    def run(self, images, save_contour_data=False, save_contour_image=False):
+    def run(self, images):
         for image in images:
             contour_x, contour_y = self.get_contour(image)
             curvature = self.calculate_curvature(contour_x, contour_y)

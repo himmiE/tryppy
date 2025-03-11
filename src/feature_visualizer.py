@@ -6,10 +6,9 @@ from spatial_efd import spatial_efd # spatial-efd for installation
 
 
 
-class FeatureExtractionVisualizer:
-    def __init__(self, input_folder, output_folder):
-        self.input_folder = input_folder
-        self.output_folder = output_folder
+class FeatureVisualizer:
+    def __init__(self):
+        pass
 
     def get_basic_plot_features(self):
         # Todo reduce copy-pasting for plots

@@ -1,4 +1,3 @@
-import json
 import keras
 from keras import layers
 import tensorflow as tf
@@ -10,35 +9,15 @@ class Model:
     def __init__(self, model_name="default", verbose=1):
         current_dir = pathlib.Path(__file__).parent.parent
         model_dir = current_dir / "resources" / "models" / model_name
-        #config_path = model_dir / "config.json"
         self.weights_path = model_dir / "model_data.weights.h5"
         self.model_name = model_name
-        #with open(config_path) as f:
-        #    self.config = json.load(f)
-        #self.model = None
         self.unet = None
-
-        '''if verbose > 1:
-            if os.path.isfile(config_path):
-                print(f"Found corresponding config-file for model: {self.model_name}")
-                with open(config_path) as f:
-                    json_data = json.load(f)
-                self.config = json_data
-                self.weights_path = json_data["weights"]
-
-            else:
-                print(f"No corresponding config-file found for model: {self.model_name}.")
-                print(f"Please ensure that the desired config-file is at the given location: {config_path}"
-                      f"Please ensure that the model_name is correct."
-                      f"If you are not using your own config file for training, leave model_name at default.")'''
-
 
     def double_conv_block(self, x, n_filters):
         # Conv2D then ReLU activation
         x = layers.Conv2D(n_filters, 3, padding="same", activation="relu", kernel_initializer="he_normal")(x)
         # Conv2D then ReLU activation
         x = layers.Conv2D(n_filters, 3, padding="same", activation="relu", kernel_initializer="he_normal")(x)
-
         return x
 
     # Downsample Block
@@ -46,7 +25,6 @@ class Model:
         f = self.double_conv_block(x, n_filters)
         p = layers.MaxPool2D(2)(f)
         p = layers.Dropout(0.3)(p)
-
         return f, p
 
     def upsample_block(self, x, conv_features, n_filters):

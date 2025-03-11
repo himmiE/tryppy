@@ -1,7 +1,8 @@
 {
   "model_name": "default",
+  "input_folder_name": "input",
   "weights_path": "resources\\models\\default\\unet_model_30May24_Combined.weights.h5",
-  "steps": {
+  "tasks": {
     "segmentation": {
       "enabled": true,
       "save_output": true

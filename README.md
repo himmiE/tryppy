@@ -34,8 +34,17 @@ No matter which approach you choose, you may want to look at the *config.json* f
 ```
 import NAME_OF_PACKAGE
 
-obj_name = NAME_OF_PACKAGE(path/to/config/file.json)
-# can be kept empty when you haven't changed name or location of the config file
+# define the path for your data.
+# if you have a customized config.json file, it should go here.
+data_path = directory_where_data_should_do
+
+# if you are handling multiple tasks with this package or are experimenting
+with different setups, you can rename the config file and pass the filename
+(relative to your defined data_path).
+
+obj_name = NAME_OF_PACKAGE(data_path)
+# alt: 
+# obj_name = NAME_OF_PACKAGE(data_path, config_filename = 'save_all_config.json')
 
 obj_name.run()
 

@@ -1,8 +1,10 @@
 import pathlib
 import unittest
 
+import numpy as np
 from numpy import mean
 
+from src.file_handler import FileHandler
 from src.transformations.Segmentation import Segmentation
 
 
@@ -11,17 +13,18 @@ class SegmentationTest(unittest.TestCase):
 
         segmentation = Segmentation()
         current_dir = pathlib.Path(__file__).parent
-        testdata_path_x = current_dir / "resources" / "images" / "test_images_TP.npy"
-        testdata_path_y = current_dir / "resources" / "images" / "test_masks_TP.npy"
-        segmentation.set_data_path(testdata_path_x)
-        predictions = segmentation.run()
+        testdata_path_x = current_dir / "resources" / "test_data" / "test_images_TP.npy"
+        testdata_path_y = current_dir / "resources" / "test_data" / "test_masks_TP.npy"
 
-        test_masks = segmentation.load_image_data(testdata_path_y)
-        print(predictions.shape)
-        print(test_masks.shape)
+        image_raw = np.load(testdata_path_x)
+        image_eval = np.load(testdata_path_y)
+        predictions = segmentation.run({0:image_raw})
+
+        predictions = np.vstack(list(predictions.values()))
         predictions = predictions.reshape(201, 320, 320)
-        difference = mean(test_masks - predictions)
-        self.assertGreater(0.1, difference)  # add assertion here
+
+        difference = mean(image_eval - predictions)
+        self.assertGreater(0.1, difference)  # 0.1 greater than difference of prediction to expected
 
 
 if __name__ == '__main__':

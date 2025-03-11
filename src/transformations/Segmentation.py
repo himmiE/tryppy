@@ -20,7 +20,7 @@ class Segmentation:
         result = dict()
         for nr, image in images.items():
             segmentation = self.model.predict(image)
-            temp_result = {i: v for i, v in enumerate(segmentation)}
+            temp_result = {f"{nr}_{i}": v for i, v in enumerate(segmentation)}
             result.update(temp_result)
         return result
 

@@ -1,5 +1,6 @@
 import json
 import os
+import pkgutil
 import shutil
 
 from src.file_handler import FileHandler
@@ -9,16 +10,15 @@ from src.transformations.Segmentation import Segmentation
 
 
 class Tryptag:
-    def __init__(self, datapath, config_filename = 'config.json'):
+    def __init__(self, datapath, config_filename='config.json'):
         config_path = datapath / config_filename
 
-        if not os.path.isfile(config_path):
-            default_config_path = "src/resources/default_config.json"
-            shutil.copyfile(default_config_path, config_path)
+        self.ensure_config_exists(config_path)
 
         with open(config_path, 'r') as config_file:
             self.config = json.load(config_file)
             self.file_handler = FileHandler(datapath)
+
 
     def run(self):
         images = self.file_handler.get_input_files(self.config["input_folder_name"])
@@ -47,3 +47,15 @@ class Tryptag:
 
     def run_test(self, images):
         pass
+
+    def ensure_config_exists(self, config_path):
+        if not os.path.isfile(config_path):
+            config_data = pkgutil.get_data(__name__, 'resources/default_config.json')
+            #shutil.copyfile(default_config_path, config_path)
+
+            # Schreibe die Datei an den Zielort
+            with open(config_path, 'wb') as f:
+                f.write(config_data)
+            print(f"New config file has been generated at {config_path}.")
+        else:
+            print("Config file has been found at {config_path}.")

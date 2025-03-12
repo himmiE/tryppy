@@ -18,7 +18,7 @@ class SegmentationTest(unittest.TestCase):
 
         image_raw = np.load(testdata_path_x)
         image_eval = np.load(testdata_path_y)
-        predictions = segmentation.run({0:image_raw})
+        predictions = segmentation.run({0: image_raw})
 
         predictions = np.vstack(list(predictions.values()))
         predictions = predictions.reshape(201, 320, 320)

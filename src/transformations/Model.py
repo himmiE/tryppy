@@ -66,6 +66,7 @@ class Model:
         return
 
     def predict(self, image):
-        predictions = self.unet.predict(tf.stack(image))
+        #predictions = self.unet.predict(tf.stack(image))
+        predictions = self.unet.predict(image)
         predictions = predictions > 0.5
         return predictions

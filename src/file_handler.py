@@ -23,12 +23,13 @@ class FileHandler:
             if str(image).endswith(".npy"):
                 input_images[i] = np.load(image)
             #elif str(image).endswith(".tiff"):
-            else:
+            # TODO make work with Tiff-files
+            '''else:
                 image_file = Image.open(image)
                 image_data = np.array(image_file)
                 image_file.close()
                 image_data = self.pre_process_tiff_file(image_data)
-                input_images[i] = image_data
+                input_images[i] = image_data'''
         return input_images
 
     def pre_process_tiff_file(self, image):
@@ -55,6 +56,8 @@ class FileHandler:
         return filenames
 
     def save_images_to(self, folder_name, images):
+        folder_path = self.data_dir / folder_name
+        os.makedirs(folder_path, exist_ok=True)
         for image in images:
             image_path = self.data_dir / folder_name / f"{image}.npy"
             np.save(image_path, image)

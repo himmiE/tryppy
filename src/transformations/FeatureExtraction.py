@@ -34,7 +34,8 @@ class FeatureExtraction:
 
     def get_contour(self, image):
         image = skimage.morphology.area_closing(image, 10)
-        contour = skimage.measure.find_contours(image, 0.8)[0]
+        contour = skimage.measure.find_contours(image, 0.8)
+        contour = contour[0]
         coeffs = spatial_efd.CalculateEFD(contour[:, 0], contour[:, 1], harmonics=20)
         xt, yt = spatial_efd.inverse_transform(coeffs, harmonic=20, n_coords=10000)
 
@@ -343,7 +344,7 @@ class FeatureExtraction:
             pass
 
     def run(self, images):
-        for image in images:
+        for name, image in images.items():
             contour_x, contour_y = self.get_contour(image)
             curvature = self.calculate_curvature(contour_x, contour_y)
             smallest_below_neg_50, smallest_remaining = self.find_relevant_minima(contour_x, contour_y)

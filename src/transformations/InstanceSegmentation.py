@@ -26,6 +26,7 @@ class InstanceSegmentation:
         pad_height, pad_width = self.get_needed_padding(height, width, patch_height, patch_width)
 
         # Pad the image
+        image = image.squeeze()
         image = np.pad(image, ((0, pad_height), (0, pad_width)), mode='constant', constant_values=0)
 
         for y in range(0, height + pad_height, patch_height):
@@ -104,7 +105,7 @@ class InstanceSegmentation:
 
     def run(self, mask_images):
         segmentation_masks = {}
-        for mask_id, mask in mask_images:
+        for mask_id, mask in mask_images.items():
             segmented_image = self.window_segmentation(mask)
             final_mask = self.cleanup_segmentation_mask(segmented_image)
             final_mask = final_mask * 255

@@ -21,7 +21,7 @@ class Tryptag:
 
 
     def run(self):
-        images = self.file_handler.get_input_files(self.config["input_folder_name"])
+        images = self.file_handler.get_input_files(self.config["input_folder_name"], keep_input_filenames=self.config["keep_input_filenames"])
         if self.config['tasks']['segmentation']['enabled']:
             segmentation_result = Segmentation().run(images)
             if self.config['tasks']['segmentation']['save_output']:

@@ -15,13 +15,17 @@ class FileHandler:
     def get_image_path(self, folder_name, image_name):
         return folder_name / image_name
 
-    def get_input_files(self, input_folder_name="input"):
+    def get_input_files(self, input_folder_name="input", keep_input_filenames=True):
         file_extensions = ('.jpg', '.png', '.jpeg', '.tiff', '.npy')
         input_image_filenames = self.get_image_filenames_from(input_folder_name, file_extensions=file_extensions)
         input_images = {}
         for i, image in enumerate(input_image_filenames):
             if str(image).endswith(".npy"):
-                input_images[i] = np.load(image)
+                if keep_input_filenames:
+                    image_key = os.path.basename(image).split(".")[0]
+                else:
+                    image_key = i
+                input_images[image_key] = np.load(image)
             #elif str(image).endswith(".tiff"):
             # TODO make work with Tiff-files
             '''else:
@@ -29,7 +33,7 @@ class FileHandler:
                 image_data = np.array(image_file)
                 image_file.close()
                 image_data = self.pre_process_tiff_file(image_data)
-                input_images[i] = image_data'''
+                input_images[image_key] = image_data'''
         return input_images
 
     def pre_process_tiff_file(self, image):
@@ -58,8 +62,8 @@ class FileHandler:
     def save_images_to(self, folder_name, images):
         folder_path = self.data_dir / folder_name
         os.makedirs(folder_path, exist_ok=True)
-        for image in images:
-            image_path = self.data_dir / folder_name / f"{image}.npy"
+        for name, image in images.items():
+            image_path = self.data_dir / folder_name / f"{name}.npy"
             np.save(image_path, image)
 
     def save_feature_data(self, feature, param):

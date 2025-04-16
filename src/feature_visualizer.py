@@ -2,71 +2,22 @@ import os
 import numpy as np
 import skimage
 from matplotlib import pyplot as plt
+from matplotlib.collections import PolyCollection
 from spatial_efd import spatial_efd # spatial-efd for installation
 
-
+import plotly.graph_objects as go
 
 class FeatureVisualizer:
     def __init__(self):
         pass
 
-    def get_basic_plot_features(self):
-        # Todo reduce copy-pasting for plots
-        pass
+    def make_plot(self, xt, yt, curvature, endpoints, grid):
+        axs = None
 
-
-    def plot_curvature(self, xt, yt, curvature, filename):
-
-        fig, axs = plt.subplots(1, 2, figsize=(15, 6))
-
-        # Spline Plot with curvature on spline line
-        sc = axs[0].scatter(xt, yt, c=curvature, cmap='viridis', label='Curvature')
-        fig.colorbar(sc, ax=axs[0], label='Curvature')
-        axs[0].legend()
-        axs[0].set_xlabel('X-axis')
-        axs[0].set_ylabel('Y-axis')
-        axs[0].set_title('Spline with Curvature')
-        axs[0].axis("equal")
-
-        # Coordinates vs Curvature Plot
-        axs[1].plot(np.arange(len(curvature)), curvature, label='Curvature')
-        axs[1].set_xlabel('Coordinate Index')
-        axs[1].set_ylabel('Curvature')
-        axs[1].set_title('Curvature vs Coordinates')
-        axs[1].legend()
-
-        plt.tight_layout()
-        plot_filename = os.path.join(self.output_folder, f"plot_{filename.split('.p')[0]}.png")
-        plt.show()
-        # plt.savefig(plot_filename)
-        plt.close()
-
-    def plot_endpoints(self, curvature, filename, nr_images=2, set_seed=None):
-        # Define the path to the KN folder
-
-        images = self.get_base_images(filename=filename, nr_images=nr_images, set_seed=set_seed)
-
-        for image_path in images:
-
-            # Load image and get contour
-            image = skimage.io.imread(image_path)
-            image = skimage.morphology.area_closing(image, 10)
-
-            contour = skimage.measure.find_contours(image, 0.8)[0]
-
-            coeffs = spatial_efd.CalculateEFD(contour[:, 0], contour[:, 1], harmonics=20)
-            xt, yt = spatial_efd.inverse_transform(coeffs, harmonic=20, n_coords=10000)
-
-            # Calculate curvature
-            curvature = calculate_curvature(xt, yt)
-            smallest_below_neg_50, smallest_remaining = find_relevant_minima(xt, yt)
-
-            fig, axs = plt.subplots(1, 2, figsize=(15, 6))
-
+        if curvature:
             # Spline Plot with curvature on spline line
+            fig, axs = plt.subplots(1, 2, figsize=(15, 6))
             sc = axs[0].scatter(xt, yt, c=curvature, cmap='viridis', label='Curvature')
-            axs[0].scatter(xt[smallest_below_neg_50], yt[smallest_below_neg_50], color="red")
-            axs[0].scatter(xt[smallest_remaining], yt[smallest_remaining], color="red")
             fig.colorbar(sc, ax=axs[0], label='Curvature')
             axs[0].legend()
             axs[0].set_xlabel('X-axis')
@@ -81,12 +32,53 @@ class FeatureVisualizer:
             axs[1].set_title('Curvature vs Coordinates')
             axs[1].legend()
 
-            plt.tight_layout()
+        if endpoints:
+            if axs:
+                ax = axs[0]
+            else:
+                fig, ax = plt.subplots(figsize=(15, 6))
+            ax.scatter(xt[endpoints[0]], yt[endpoints[0]], color="red")
+            ax.scatter(xt[endpoints[1]], yt[endpoints[1]], color="red")
+
+        if grid:
+            if axs:
+                ax = axs[0]
+            else:
+                fig, ax = plt.subplots()
+
+            poly_collection = PolyCollection(cells, facecolors='cyan', edgecolors='r', alpha=.25)
+            ax.add_collection(poly_collection)
+
+            # Plot each cell boundary
+            for cell in cells:
+                polygon = plt.Polygon(cell, closed=True, edgecolor='black', fill=None)
+                ax.add_patch(polygon)
+
+            # Plot horizontal lines
+            for pos_coords, neg_coords in zip(vertical_coordinates_pos, vertical_coordinates_neg):
+                ax.plot([pt[0] for pt in pos_coords], [pt[1] for pt in pos_coords], 'b-')
+                ax.plot([pt[0] for pt in neg_coords], [pt[1] for pt in neg_coords], 'b-')
+
+            # Plot vertical lines
+            for i in range(len(vertical_coordinates_pos[0])):
+                vertical_line_pos = [coords[i] for coords in vertical_coordinates_pos]
+                vertical_line_neg = [coords[i] for coords in vertical_coordinates_neg]
+                ax.plot([pt[0] for pt in vertical_line_pos], [pt[1] for pt in vertical_line_pos], 'b-')
+                ax.plot([pt[0] for pt in vertical_line_neg], [pt[1] for pt in vertical_line_neg], 'b-')
+
+            ax.plot(xt, yt, "r-")
+
+            ax.autoscale()
+            plt.gca().set_aspect('equal', adjustable='box')
             plt.show()
-            plot_filename = os.path.join(output_folder_path, f"plot_{filename.split('.p')[0]}.png")
-            # plt.savefig(plot_filename)
-            plt.close()
-        pass
+
+        plt.tight_layout()
+        #plot_filename = os.path.join(self.output_folder, f"plot_{filename.split('.p')[0]}.png")
+        plt.show()
+        # plt.savefig(plot_filename)
+        plt.close()
+
+
 
     def plot_spine(self):
         # ToDo

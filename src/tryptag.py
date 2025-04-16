@@ -45,8 +45,8 @@ class Tryptag:
         #ToDo add classification
         return images
 
-    def run_test(self, images):
-        pass
+    #def run_test(self, images):
+    #    pass
 
     def ensure_config_exists(self, config_path):
         if not os.path.isfile(config_path):

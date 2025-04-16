@@ -19,13 +19,13 @@ class FileHandler:
         file_extensions = ('.jpg', '.png', '.jpeg', '.tiff', '.npy')
         input_image_filenames = self.get_image_filenames_from(input_folder_name, file_extensions=file_extensions)
         input_images = {}
-        for i, image in enumerate(input_image_filenames):
-            if str(image).endswith(".npy"):
+        for i, image_filename in enumerate(input_image_filenames):
+            if str(image_filename).endswith(".npy"):
                 if keep_input_filenames:
-                    image_key = os.path.basename(image).split(".")[0]
+                    image_key = os.path.basename(image_filename).split(".")[0]
                 else:
                     image_key = i
-                input_images[image_key] = np.load(image)
+                input_images[image_key] = np.load(image_filename)
             #elif str(image).endswith(".tiff"):
             # TODO make work with Tiff-files
             '''else:
@@ -64,7 +64,7 @@ class FileHandler:
         os.makedirs(folder_path, exist_ok=True)
         for name, image in images.items():
             image_path = self.data_dir / folder_name / f"{name}.npy"
-            np.save(image_path, image)
+            np.save(file=image_path, arr=image)
 
     def save_feature_data(self, feature, param):
         if feature == "contour":

@@ -1,6 +1,7 @@
 {
   "model_name": "default",
   "input_folder_name": "input",
+  "keep_input_filenames": true,
   "weights_path": "resources\\models\\default\\unet_model_30May24_Combined.weights.h5",
   "tasks": {
     "segmentation": {
@@ -13,7 +14,10 @@
     },
     "feature_extraction": {
       "enabled": true,
-      "save_output": true
+      "save_output": true,
+      "save_plots": true,
+      "plot_features": ["curvature", "endpoints"],
+      "grid_size": 320
     }
   },
   "output_dir": ""

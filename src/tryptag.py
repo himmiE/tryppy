@@ -1,12 +1,12 @@
 import json
 import os
 import pkgutil
-import shutil
 
 from src.file_handler import FileHandler
 from src.transformations.FeatureExtraction import FeatureExtraction
 from src.transformations.InstanceSegmentation import InstanceSegmentation
 from src.transformations.Segmentation import Segmentation
+from src.transformations.classification import Classification
 
 
 class Tryptag:
@@ -42,7 +42,13 @@ class Tryptag:
             if self.config['tasks']['feature_extraction']['save_image']['enabled']:
                 self.file_handler.save_feature_images(features)
             images = features
+
         #ToDo add classification
+        if self.config['tasks']['classification']['enabled']:
+            classification_result = Classification().run(images)
+            if self.config['tasks']['classification']['save_output']:
+                self.file_handler.save_images_to('classification', classification_result)
+            images = classification_result
         return images
 
     #def run_test(self, images):

@@ -1,6 +1,3 @@
-import glob
-import os
-
 import skimage
 import numpy as np
 from src.transformations.Model import Model
@@ -92,16 +89,6 @@ class InstanceSegmentation:
                 cleaned_image[cleaned_image == prop.label] = 0
 
         return cleaned_image > 0
-
-    '''def run(self, mask_images):
-        segmentation_masks = {}
-        for mask_id, mask in mask_images:
-            segmented_image = self.window_segmentation(mask)
-            final_mask = self.cleanup_segmentation_mask(segmented_image)
-            final_mask = final_mask * 255
-            final_mask = final_mask.astype(np.uint8)
-            segmentation_masks[mask_id] = final_mask
-        return segmentation_masks'''
 
     def run(self, mask_images):
         segmentation_masks = {}

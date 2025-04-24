@@ -18,6 +18,10 @@
       "save_plots": true,
       "plot_features": ["curvature", "endpoints"],
       "grid_size": 320
+    },
+    "classification": {
+      "enabled": true,
+      "save_output": true
     }
   },
   "output_dir": ""

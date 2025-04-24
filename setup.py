@@ -1,0 +1,27 @@
+from setuptools import setup, find_packages
+
+setup(
+    name='tryp-enhance',
+    version='0.1.0',
+    author='Emely Himmstedt',
+    description='Kurze Beschreibung deines Pakets',
+    long_description=open('README.md').read(),
+    long_description_content_type='text/markdown',
+    url='https://github.com/deinname/dein_paket',
+    packages=find_packages(),
+    install_requires=[
+        'numpy',
+        'scipy',
+        'scikit-image',
+        'opencv-python',
+        'spatial_efd',      #TODO muss verfügbar sein auf PyPI (bitte checken)
+        'tensorflow',
+        'keras',
+        'matplotlib',
+    ],
+    classifiers=[
+        'Programming Language :: Python :: 3',
+        'Operating System :: OS Independent',
+    ],
+    python_requires='>=3.6',
+)

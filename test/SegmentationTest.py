@@ -5,7 +5,7 @@ import numpy as np
 from numpy import mean
 
 from src.file_handler import FileHandler
-from src.transformations.Segmentation import Segmentation
+from src.transformations.segmentation import Segmentation
 
 
 class SegmentationTest(unittest.TestCase):

@@ -4,6 +4,7 @@ import os.path
 
 import numpy as np
 import scipy
+from matplotlib import pyplot as plt
 from scipy.integrate import quad
 import skimage
 from scipy.signal import find_peaks
@@ -12,6 +13,7 @@ import warnings
 from scipy.signal import savgol_filter
 from scipy.interpolate import UnivariateSpline
 from scipy.optimize import fsolve
+from shapely.geometry import Polygon
 
 
 from spatial_efd import spatial_efd
@@ -36,11 +38,24 @@ class FeatureExtraction:
         result = [i % list_len for i in indices]
         return result
 
+
     def get_contour(self, image):
         image = skimage.morphology.area_closing(image, 10)
-        contour = skimage.measure.find_contours(image, 0.8)
-        if np.array(contour).ndim > 2:
-            contour = contour[0]
+        contours = skimage.measure.find_contours(image, 0.8)
+
+        best_contour = None
+        largest_area = 0
+
+        for c in contours:
+            try:
+                poly = Polygon(c[:, ::-1])  # (y,x) → (x,y)
+                if poly.is_valid and poly.area > largest_area:
+                    largest_area = poly.area
+                    best_contour = c
+            except Exception as e:
+                print(f"skipped contour: {e}")
+
+        contour = best_contour
         coeffs = spatial_efd.CalculateEFD(contour[:, 0], contour[:, 1], harmonics=20)
         xt, yt = spatial_efd.inverse_transform(coeffs, harmonic=20, n_coords=10000)
 
@@ -60,7 +75,7 @@ class FeatureExtraction:
         for i in range(len(xt)):
             # Define the window range
             x_window = xt[self.get_window_from_list(len(xt), i, window_size)]
-            y_window = yt[self.get_window_from_list(len(yt), i, window_size)] #ToDO thorough testing!
+            y_window = yt[self.get_window_from_list(len(yt), i, window_size)]
 
             # Calculate first derivatives
             dx = np.gradient(x_window)
@@ -201,7 +216,11 @@ class FeatureExtraction:
     def arc_length(self, fx, fy, a, b):
         fx_der = fx.derivative()
         fy_der = fy.derivative()
-        length, _ = quad(lambda t: np.sqrt(fx_der(t) ** 2 + fy_der(t) ** 2), a, b)
+
+        def integrand(t):
+            return float(np.sqrt(fx_der(t) ** 2 + fy_der(t) ** 2))
+
+        length = quad(integrand, a, b)[0]
         return length
 
     def find_point_on_boundary(self, boundary, point, distance):
@@ -285,14 +304,13 @@ class FeatureExtraction:
 
     def create_coordinates(self, midline_points, normals, max_distance, num_vertical_splits):
         vertical_distance = max_distance / num_vertical_splits
-        vertical_coordinates_pos = []
-        vertical_coordinates_neg = []
+        vertical_coordinates = []
 
         for i, midline_point in enumerate(midline_points):
             normal = normals[i]
             curr_point = midline_point
             pos_coords = [curr_point]
-            neg_coords = [curr_point]
+            neg_coords = []
 
             for j in range(num_vertical_splits):
                 next_point_pos = curr_point + normal * vertical_distance
@@ -305,11 +323,13 @@ class FeatureExtraction:
                 neg_coords.append(next_point_neg)
                 curr_point = next_point_neg
 
-            vertical_coordinates_pos.append(pos_coords)
-            vertical_coordinates_neg.append(neg_coords)
+            vertical_coordinates.append(neg_coords[::-1] + pos_coords)
+
+        vc = vertical_coordinates
+        cells = [[vc[i][j], vc[i+1][j], vc[i][j+1], vc[i+1][j+1]] for j in range(num_vertical_splits-1) for i in range(len(vc)-1)]
 
         # Combine the coordinates into cells
-        cells = []
+        '''cells = []
         for pos_coords, neg_coords in zip(vertical_coordinates_pos, vertical_coordinates_neg):
             for i in range(len(pos_coords) - 1):  # Assuming pos_coords and neg_coords are of the same length
                 cell = [
@@ -318,26 +338,14 @@ class FeatureExtraction:
                     neg_coords[i + 1],
                     neg_coords[i]
                 ]
-                cells.append(cell)
+                cells.append(cell)'''
 
         vertices = np.array(cells).reshape(-1, 2)
 
         # Debugging: Print out some of the cells
         print("Cells (First 5):", cells[:5])  # Print first 5 cells for inspection
 
-        return vertices, vertical_coordinates_pos, vertical_coordinates_neg, cells
-
-    def sum_pixel_intensities(self, image, vertices):
-        intensity_sums = []
-
-        for i in range(0, len(vertices), 3):
-            polygon = np.array([[int(pt[0]), int(pt[1])] for pt in vertices[i:i + 3]], np.int32)
-            mask = np.zeros(image.shape[:2], dtype=np.uint8)
-            cv2.fillPoly(mask, [polygon], 255)
-            intensity_sum = cv2.sumElems(image * (mask // 255))[0]
-            intensity_sums.append(intensity_sum)
-
-        return intensity_sums
+        return cells
 
     def get_grid(self, contour, endpoints, image_shape):
 
@@ -350,120 +358,122 @@ class FeatureExtraction:
         mask[rr, cc] = 1
 
         midline = self.get_midline(mask, 2, 50)
+        if not midline:
+            return None
 
-        if midline is not None:
-            midline = np.array(midline)
-            # midline = midline/scaling_factor
-            coords_ml = midline.copy()
-            start_point_ml = coords_ml[0]
-            end_point_ml = coords_ml[-1]
+        midline = np.array(midline)
+        # midline = midline/scaling_factor
+        coords_ml = midline.copy()
+        start_point_ml = coords_ml[0]
+        end_point_ml = coords_ml[-1]
 
-            smallest_below_neg_50_index, smallest_remaining_index = endpoints
-            #if not smallest_below_neg_50_index or not smallest_remaining_index:
-            #    break
-            smallest_below_neg_50 = (yt[smallest_below_neg_50_index], xt[smallest_below_neg_50_index])
-            smallest_remaining = (yt[smallest_remaining_index], xt[smallest_remaining_index])
+        head, tail = endpoints
+        #if not smallest_below_neg_50_index or not smallest_remaining_index:
+        #    break
+        smallest_below_neg_50 = (yt[head], xt[head])
+        smallest_remaining = (yt[tail], xt[tail])
 
-            # Calculate distances to start_point_ml
-            dist_to_start_below_neg_50 = np.linalg.norm(smallest_below_neg_50 - start_point_ml)
-            dist_to_start_remaining = np.linalg.norm(smallest_remaining - start_point_ml)
-            distances.append(min(dist_to_start_below_neg_50, dist_to_start_remaining))
-            # Determine which point is closer to start_point_ml
-            if dist_to_start_below_neg_50 < dist_to_start_remaining:
-                extended_coords_ml = np.insert(coords_ml, 0, smallest_below_neg_50, axis=0)
-                extended_coords_ml = np.append(extended_coords_ml, [smallest_remaining], axis=0)
-            else:
-                extended_coords_ml = np.insert(coords_ml, 0, smallest_remaining, axis=0)
-                extended_coords_ml = np.append(extended_coords_ml, [smallest_below_neg_50], axis=0)
+        # Calculate distances to start_point_ml
+        dist_to_start_below_neg_50 = np.linalg.norm(smallest_below_neg_50 - start_point_ml)
+        dist_to_start_remaining = np.linalg.norm(smallest_remaining - start_point_ml)
+        distances.append(min(dist_to_start_below_neg_50, dist_to_start_remaining))
 
-            # Smooth the extended midline
-            window_length = 5  # Must be an odd number, try different values
-            polyorder = 3  # Try different values
-            smoothed_x_ml = savgol_filter(extended_coords_ml[:, 1], window_length, polyorder)
-            smoothed_y_ml = savgol_filter(extended_coords_ml[:, 0], window_length, polyorder)
+        # Determine which point is closer to start_point_ml
+        if dist_to_start_below_neg_50 < dist_to_start_remaining:
+            extended_coords_ml = np.insert(coords_ml, 0, smallest_below_neg_50, axis=0)
+            extended_coords_ml = np.append(extended_coords_ml, [smallest_remaining], axis=0)
+        else:
+            extended_coords_ml = np.insert(coords_ml, 0, smallest_remaining, axis=0)
+            extended_coords_ml = np.append(extended_coords_ml, [smallest_below_neg_50], axis=0)
 
-            # Fit a function to the smoothed coordinates using UnivariateSpline
-            spline_x_ml = UnivariateSpline(np.arange(extended_coords_ml.shape[0]), smoothed_x_ml, s=5)
-            spline_y_ml = UnivariateSpline(np.arange(extended_coords_ml.shape[0]), smoothed_y_ml, s=5)
-            new_points_x_ml = spline_x_ml(np.linspace(0, len(extended_coords_ml) - 1, 1000))
-            new_points_y_ml = spline_y_ml(np.linspace(0, len(extended_coords_ml) - 1, 1000))
+        # Smooth the extended midline
+        window_length = 5  # Must be an odd number, try different values
+        polyorder = 3  # Try different values
+        smoothed_x_ml = savgol_filter(extended_coords_ml[:, 1], window_length, polyorder)
+        smoothed_y_ml = savgol_filter(extended_coords_ml[:, 0], window_length, polyorder)
 
-            total_length = self.arc_length(spline_x_ml, spline_y_ml, 0, len(extended_coords_ml) - 1)
-            num_points = 50
-            arc_lengths = np.linspace(0, total_length, num=num_points)
+        # Fit a function to the smoothed coordinates using UnivariateSpline
+        spline_x_ml = UnivariateSpline(np.arange(extended_coords_ml.shape[0]), smoothed_x_ml, s=5)
+        spline_y_ml = UnivariateSpline(np.arange(extended_coords_ml.shape[0]), smoothed_y_ml, s=5)
+        new_points_x_ml = spline_x_ml(np.linspace(0, len(extended_coords_ml) - 1, 1000))
+        new_points_y_ml = spline_y_ml(np.linspace(0, len(extended_coords_ml) - 1, 1000))
 
-            # Find the t values that correspond to these equidistant arc lengths
-            t_new = np.zeros(num_points)
-            t_new[0] = 0
+        total_length = self.arc_length(spline_x_ml, spline_y_ml, 0, len(extended_coords_ml) - 1)
+        num_points = 50
+        arc_lengths = np.linspace(0, total_length, num=num_points)
 
-            for i in range(1, num_points):
-                def objective(t):
-                    return self.arc_length(spline_x_ml, spline_y_ml, 0, t) - arc_lengths[i]
+        # Find the t values that correspond to these equidistant arc lengths
+        t_new = np.zeros(num_points)
+        t_new[0] = 0
 
-                t_new[i] = fsolve(objective, t_new[i - 1])[0]
+        for i in range(1, num_points):
+            def objective(t):
+                return self.arc_length(spline_x_ml, spline_y_ml, 0, t) - arc_lengths[i]
 
-            # Sample the splines at these t values
-            x_new = spline_x_ml(t_new)
-            y_new = spline_y_ml(t_new)
+            t_new[i] = fsolve(objective, t_new[i - 1])[0]
 
-            neighborhood_size = 5
+        # Sample the splines at these t values
+        x_new = spline_x_ml(t_new)
+        y_new = spline_y_ml(t_new)
 
-            normals_x = []
-            normals_y = []
+        neighborhood_size = 5
 
-            for i in range(len(t_new)):
-                # Make sure to handle boundaries correctly
-                t_neighborhood = t_new[max(0, i - neighborhood_size):min(len(t_new), i + neighborhood_size + 1)]
+        normals_x = []
+        normals_y = []
 
-                # Compute tangents in the neighborhood
-                dx_neighborhood = spline_x_ml.derivative()(t_neighborhood)
-                dy_neighborhood = spline_y_ml.derivative()(t_neighborhood)
+        for i in range(len(t_new)):
+            # Make sure to handle boundaries correctly
+            t_neighborhood = t_new[max(0, i - neighborhood_size):min(len(t_new), i + neighborhood_size + 1)]
 
-                # Average the tangents
-                avg_dx = np.mean(dx_neighborhood)
-                avg_dy = np.mean(dy_neighborhood)
+            # Compute tangents in the neighborhood
+            dx_neighborhood = spline_x_ml.derivative()(t_neighborhood)
+            dy_neighborhood = spline_y_ml.derivative()(t_neighborhood)
 
-                # Normalize the averaged tangent vector
-                avg_tangent_magnitude = np.sqrt(avg_dx ** 2 + avg_dy ** 2)
-                avg_tangent_x = avg_dx / avg_tangent_magnitude
-                avg_tangent_y = avg_dy / avg_tangent_magnitude
+            # Average the tangents
+            avg_dx = np.mean(dx_neighborhood)
+            avg_dy = np.mean(dy_neighborhood)
 
-                # Compute the normal vector from the averaged tangent vector
-                normal_x = -avg_tangent_y
-                normal_y = avg_tangent_x
+            # Normalize the averaged tangent vector
+            avg_tangent_magnitude = np.sqrt(avg_dx ** 2 + avg_dy ** 2)
+            avg_tangent_x = avg_dx / avg_tangent_magnitude
+            avg_tangent_y = avg_dy / avg_tangent_magnitude
 
-                normals_x.append(normal_x)
-                normals_y.append(normal_y)
+            # Compute the normal vector from the averaged tangent vector
+            normal_x = -avg_tangent_y
+            normal_y = avg_tangent_x
 
-            # Convert list of normals to a numpy array for easier handling
-            normal_x = np.array(normals_x)
-            normal_y = np.array(normals_y)
+            normals_x.append(normal_x)
+            normals_y.append(normal_y)
 
-            # Compute the first intersection for each normal vector in both directions
-            all_intersections, distances = self.compute_intersections_and_distances(x_new, y_new, normal_x, normal_y, xt, yt,
-                                                                               1)
-            opposite_intersections, opposite_distances = self.compute_intersections_and_distances(x_new, y_new, normal_x,
-                                                                                             normal_y, xt, yt, -1)
+        # Convert list of normals to a numpy array for easier handling
+        normal_x = np.array(normals_x)
+        normal_y = np.array(normals_y)
 
-            intersection_matrix = np.concatenate(
-                (np.expand_dims(np.array(all_intersections), 0), np.expand_dims(np.array(opposite_intersections), 0)),
-                0)
-            distances_matrix = np.concatenate(
-                (np.expand_dims(np.array(distances), 0), np.expand_dims(np.array(opposite_distances), 0)), 0)
+        # Compute the first intersection for each normal vector in both directions
+        all_intersections, distances = self.compute_intersections_and_distances(x_new, y_new, normal_x, normal_y, xt, yt,
+                                                                           1)
+        opposite_intersections, opposite_distances = self.compute_intersections_and_distances(x_new, y_new, normal_x,
+                                                                                         normal_y, xt, yt, -1)
 
-            # Normalize distances
-            max_distance = max(np.max(distances), np.max(opposite_distances))
-            if max_distance > 0:
-                distances_matrix = distances_matrix / max_distance
+        intersection_matrix = np.concatenate(
+            (np.expand_dims(np.array(all_intersections), 0), np.expand_dims(np.array(opposite_intersections), 0)),
+            0)
+        distances_matrix = np.concatenate(
+            (np.expand_dims(np.array(distances), 0), np.expand_dims(np.array(opposite_distances), 0)), 0)
+
+        # Normalize distances
+        max_distance = max(np.max(distances), np.max(opposite_distances))
+        if max_distance > 0:
+            distances_matrix = distances_matrix / max_distance
 
         midline_points = np.array([x_new, y_new]).T  # Assuming x_new and y_new are 1D arrays of the same length
         normals = np.array([normal_x, normal_y]).T  # Assuming normal_x and normal_y are 1D arrays of the same length
 
-        num_vertical_splits = 3  #ToDo Replace with actual number of vertical splits
+        num_vertical_splits = 3  #ToDo adjust in config
 
-        vertices, vertical_coordinates_pos, vertical_coordinates_neg, cells = self.create_coordinates(midline_points,
-                                                                                                 normals, max_distance,
-                                                                                                 num_vertical_splits)
+        cells = self.create_coordinates(midline_points,normals, max_distance, num_vertical_splits)
+
+        return cells
 
     def get_src_images(self, source_image_directory):
         if os.path.isdir(source_image_directory):
@@ -477,9 +487,13 @@ class FeatureExtraction:
     def run(self, images):
         curvatures = dict()
         endpoints = dict()
-        grid = dict()
+        grids = dict()
         for name, image in images.items():
             contour_x, contour_y = self.get_contour(image)
             curvatures[name] = self.calculate_curvature(contour_x, contour_y)
             endpoints[name] = self.find_relevant_minima(contour_x, contour_y)
-            grid[name] = self.get_grid()
+            grid = self.get_grid((contour_x, contour_y), endpoints[name], (320,320))
+            if not grid:
+                continue
+            else:
+                grids[name] = grid

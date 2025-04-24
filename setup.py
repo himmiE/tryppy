@@ -14,10 +14,11 @@ setup(
         'scipy',
         'scikit-image',
         'opencv-python',
-        'spatial_efd',      #TODO muss verfügbar sein auf PyPI (bitte checken)
+        'spatial-efd',
         'tensorflow',
         'keras',
         'matplotlib',
+        'shapely'
     ],
     classifiers=[
         'Programming Language :: Python :: 3',

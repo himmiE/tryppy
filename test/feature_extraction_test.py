@@ -2,7 +2,7 @@ import pathlib
 import unittest
 import numpy as np
 
-from src.transformations.FeatureExtraction import FeatureExtraction
+from src.transformations.feature_extraction import FeatureExtraction
 
 
 class FeatureExtractionTest(unittest.TestCase):

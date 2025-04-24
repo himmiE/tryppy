@@ -1,4 +1,4 @@
-from src.transformations.Model import Model
+from src.transformations.model import Model
 
 
 class Segmentation:

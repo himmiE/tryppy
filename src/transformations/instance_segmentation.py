@@ -1,6 +1,6 @@
 import skimage
 import numpy as np
-from src.transformations.Model import Model
+from src.transformations.model import Model
 
 
 class InstanceSegmentation:

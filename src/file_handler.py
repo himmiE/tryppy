@@ -76,7 +76,7 @@ class FileHandler:
     # spline:
     # extended_midline: REMOVE
     # normals: REMOVE
-    # grid
+    # grid:
 
     def save_feature_images(self, features):
         #ToDo: gernerate images

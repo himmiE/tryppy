@@ -1,7 +1,7 @@
 import pathlib
 import unittest
 
-from src.transformations.InstanceSegmentation import InstanceSegmentation
+from src.transformations.instance_segmentation import InstanceSegmentation
 
 
 class InstanceSegmentationTest(unittest.TestCase):

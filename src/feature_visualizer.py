@@ -5,13 +5,13 @@ from matplotlib import pyplot as plt
 from matplotlib.collections import PolyCollection
 from spatial_efd import spatial_efd # spatial-efd for installation
 
-import plotly.graph_objects as go
+#import plotly.graph_objects as go
 
 class FeatureVisualizer:
     def __init__(self):
         pass
 
-    def make_plot(self, xt, yt, curvature, endpoints, grid):
+    def make_plot(self, xt, yt, curvature, endpoints, vertical_coordinates_pos, vertical_coordinates_neg, cells):
         axs = None
 
         if curvature:
@@ -40,7 +40,7 @@ class FeatureVisualizer:
             ax.scatter(xt[endpoints[0]], yt[endpoints[0]], color="red")
             ax.scatter(xt[endpoints[1]], yt[endpoints[1]], color="red")
 
-        if grid:
+        if cells:
             if axs:
                 ax = axs[0]
             else:

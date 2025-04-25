@@ -3,13 +3,13 @@ import os
 import pkgutil
 
 from src.file_handler import FileHandler
+from src.transformations.classification import Classification
 from src.transformations.feature_extraction import FeatureExtraction
 from src.transformations.instance_segmentation import InstanceSegmentation
 from src.transformations.segmentation import Segmentation
-from src.transformations.classification import Classification
 
 
-class Tryptag:
+class Tryppy:
     def __init__(self, datapath, config_filename='config.json'):
         config_path = datapath / config_filename
 
@@ -35,7 +35,7 @@ class Tryptag:
             images = instance_segmentation_result
 
         if self.config['tasks']['feature_extraction']['enabled']:
-            features = FeatureExtraction().run(images)
+            features = FeatureExtraction(self.config['tasks']['feature_extraction']['grid_size']).run(images)
             for feature in features:
                 if self.config['tasks']['feature_extraction'][feature]['save_data']['enabled']:
                     self.file_handler.save_feature_data(feature, features[feature])
@@ -43,21 +43,16 @@ class Tryptag:
                 self.file_handler.save_feature_images(features)
             images = features
 
-        '''#ToDo add classification
         if self.config['tasks']['classification']['enabled']:
             classification_result = Classification().run(images)
             if self.config['tasks']['classification']['save_output']:
                 self.file_handler.save_images_to('classification', classification_result)
-            images = classification_result'''
+            images = classification_result
         return images
-
-    #def run_test(self, images):
-    #    pass
 
     def ensure_config_exists(self, config_path):
         if not os.path.isfile(config_path):
             config_data = pkgutil.get_data(__name__, 'resources/default_config.json')
-            #shutil.copyfile(default_config_path, config_path)
 
             # Schreibe die Datei an den Zielort
             with open(config_path, 'wb') as f:

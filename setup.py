@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 
 setup(
-    name='tryp-enhance',
+    name='tryppy',
     version='0.1.0',
     author='Emely Himmstedt',
     description='Kurze Beschreibung deines Pakets',

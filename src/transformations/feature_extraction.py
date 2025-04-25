@@ -13,7 +13,7 @@ import warnings
 from scipy.signal import savgol_filter
 from scipy.interpolate import UnivariateSpline
 from scipy.optimize import fsolve
-from shapely.geometry import Polygon
+from shapely.geometry import Polygon, LineString, Point
 
 
 from spatial_efd import spatial_efd
@@ -21,7 +21,8 @@ from spatial_efd import spatial_efd
 
 
 class FeatureExtraction:
-    def __init__(self):
+    def __init__(self, gridsize):
+        self.gridsize = gridsize
         pass
 
     def normalize_coordinates(self, xt, yt):
@@ -43,8 +44,13 @@ class FeatureExtraction:
         image = skimage.morphology.area_closing(image, 10)
         contours = skimage.measure.find_contours(image, 0.8)
 
+        if not contours:
+            contours = skimage.measure.find_contours(image, 0.5)
+
+
         best_contour = None
         largest_area = 0
+
 
         for c in contours:
             try:
@@ -54,6 +60,9 @@ class FeatureExtraction:
                     best_contour = c
             except Exception as e:
                 print(f"skipped contour: {e}")
+
+        if best_contour is None:
+            best_contour = np.array([[0.0, 0.0], [0.0, 1.0], [1.0, 0.0]]) # TODO: find basic contour to return
 
         contour = best_contour
         coeffs = spatial_efd.CalculateEFD(contour[:, 0], contour[:, 1], harmonics=20)
@@ -95,13 +104,90 @@ class FeatureExtraction:
 
         return np.array(curvatures)
 
-    def find_relevant_minima(self, xt, yt, first_threshold=-20, second_threshold=-45, min_distance=4000, show=0):
+    def find_endpoints(self, contour_x, contour_y, threshold=True):
+        head = None
+        tail = None
+        if threshold:
+            head, tail = self.find_minima_with_threshold(contour_x, contour_y)
+        if head is None or tail is None:
+            head, tail = self.find_minima_with_midline(contour_x, contour_y)
+        return head, tail
+
+    from shapely.geometry import LineString, Point, Polygon
+
+    def extend_line_to_contour(self, start_point, direction, contour_x, contour_y, length=100):
+        contour_points = list(zip(contour_x, contour_y))
+        poly = Polygon(contour_points)
+
+        # Shapely erwartet (x, y)
+        line = LineString([
+            (start_point[1], start_point[0]),
+            (start_point[1] + length * direction[1], start_point[0] + length * direction[0])
+        ])
+
+        intersection = line.intersection(poly.boundary)
+
+        if intersection.is_empty:
+            return None
+
+        if intersection.geom_type == 'Point':
+            return np.array([intersection.y, intersection.x])
+        elif intersection.geom_type == 'MultiPoint':
+            points = np.array([[p.y, p.x] for p in intersection])
+            dists = np.linalg.norm(points - start_point, axis=1)
+            return points[np.argmin(dists)]
+        else:
+            print("no intersection could be found between the linear midline extension and the contour")
+            return None
+
+    def find_minima_with_midline(self, xt, yt, threshold=-20):
+        mask = np.zeros((self.gridsize, self.gridsize), dtype=np.uint8)
+        midline = self.get_midline(mask, 2, 50)
+
+        midline = np.array(midline)
+        start_point = midline[0]
+        end_point = midline[-1]
+
+        start_vec = start_point - midline[1]
+        end_vec = end_point - midline[-2]
+
+        start_dir = start_vec / np.linalg.norm(start_vec)
+        end_dir = end_vec / np.linalg.norm(end_vec)
+
+        extended_start = self.extend_line_to_contour(start_point, start_dir, xt, yt)
+        extended_end = self.extend_line_to_contour(end_point, end_dir, xt, yt)
+
+        curvature = self.calculate_curvature(xt, yt)
+        minima_indices, _ = find_peaks(-curvature)
+        minima_values = curvature[minima_indices]
+
+        # Find minima below first threshold
+        filtered_indices = minima_indices[minima_values <= threshold]
+        filtered_values = minima_values[minima_values <= threshold]
+
+        minima_coords = np.stack([yt[filtered_indices], xt[filtered_indices]], axis=1)
+
+        dists_to_start = np.linalg.norm(minima_coords - extended_start, axis=1)
+        dists_to_end = np.linalg.norm(minima_coords - extended_end, axis=1)
+
+        alpha = 1.0  # weight of the curvature in relation to the distance
+
+        score_start = dists_to_start - alpha * filtered_values
+        score_end = dists_to_end - alpha * filtered_values
+
+        best_start_idx = filtered_indices[np.argmin(score_start)]  # Index des besten Startpunkts
+        best_end_idx = filtered_indices[np.argmin(score_end)]  # Index des besten Endpunkts
+
+        return best_start_idx, best_end_idx
+
+    def find_minima_with_threshold(self, xt, yt, first_threshold=-20, second_threshold=-45, show=0):
         min_value_below_second_threshold = None
         smallest_remaining_index = None
 
-        curvatures = self.calculate_curvature(xt, yt)
-        minima_indices, _ = find_peaks(-curvatures)
-        minima_values = curvatures[minima_indices]
+        curvature = self.calculate_curvature(xt, yt)
+        min_distance = int(len(curvature)*0.4)
+        minima_indices, _ = find_peaks(-curvature)
+        minima_values = curvature[minima_indices]
 
         # Find minima below first threshold
         first_threshold_indices = minima_indices[minima_values <= first_threshold]
@@ -124,7 +210,7 @@ class FeatureExtraction:
         remaining_indices = [idx for idx in first_threshold_indices if
                              min_value_below_second_threshold is None
                              or is_far_enough(idx, min_value_below_second_threshold,min_distance)]
-        remaining_values = curvatures[remaining_indices]
+        remaining_values = curvature[remaining_indices]
 
         if len(remaining_values) > 0:
             smallest_remaining_index = remaining_indices[np.argmin(remaining_values)]
@@ -326,7 +412,7 @@ class FeatureExtraction:
             vertical_coordinates.append(neg_coords[::-1] + pos_coords)
 
         vc = vertical_coordinates
-        cells = [[vc[i][j], vc[i+1][j], vc[i][j+1], vc[i+1][j+1]] for j in range(num_vertical_splits-1) for i in range(len(vc)-1)]
+        cells = [[[vc[i][j], vc[i+1][j], vc[i][j+1], vc[i+1][j+1]] for j in range(num_vertical_splits-1)] for i in range(len(vc)-1)]
 
         # Combine the coordinates into cells
         '''cells = []
@@ -343,7 +429,7 @@ class FeatureExtraction:
         vertices = np.array(cells).reshape(-1, 2)
 
         # Debugging: Print out some of the cells
-        print("Cells (First 5):", cells[:5])  # Print first 5 cells for inspection
+        #print("Cells (First 5):", cells[:5])  # Print first 5 cells for inspection
 
         return cells
 
@@ -358,11 +444,9 @@ class FeatureExtraction:
         mask[rr, cc] = 1
 
         midline = self.get_midline(mask, 2, 50)
-        if not midline:
-            return None
+        print(midline)
 
         midline = np.array(midline)
-        # midline = midline/scaling_factor
         coords_ml = midline.copy()
         start_point_ml = coords_ml[0]
         end_point_ml = coords_ml[-1]
@@ -372,9 +456,16 @@ class FeatureExtraction:
         #    break
         smallest_below_neg_50 = (yt[head], xt[head])
         smallest_remaining = (yt[tail], xt[tail])
-
+        print(xt)
+        print(yt)
+        print(head)
+        print(tail)
+        print(smallest_below_neg_50)
         # Calculate distances to start_point_ml
         dist_to_start_below_neg_50 = np.linalg.norm(smallest_below_neg_50 - start_point_ml)
+        if isinstance(dist_to_start_below_neg_50, np.ndarray) and dist_to_start_below_neg_50.shape == (2, 1, 10000):
+            print(dist_to_start_below_neg_50)
+            pass
         dist_to_start_remaining = np.linalg.norm(smallest_remaining - start_point_ml)
         distances.append(min(dist_to_start_below_neg_50, dist_to_start_remaining))
 
@@ -491,7 +582,7 @@ class FeatureExtraction:
         for name, image in images.items():
             contour_x, contour_y = self.get_contour(image)
             curvatures[name] = self.calculate_curvature(contour_x, contour_y)
-            endpoints[name] = self.find_relevant_minima(contour_x, contour_y)
+            endpoints[name] = self.find_endpoints(contour_x, contour_y)
             grid = self.get_grid((contour_x, contour_y), endpoints[name], (320,320))
             if not grid:
                 continue

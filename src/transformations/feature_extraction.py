@@ -1,6 +1,7 @@
 import glob
 import math
 import os.path
+import sys
 
 import numpy as np
 import scipy
@@ -218,40 +219,58 @@ class FeatureExtraction:
         return min_value_below_second_threshold, smallest_remaining_index
 
     def get_midline(self, mask, prefilter_radius, min_length_pruning, show=0):
-        pth_skeleton = self.mask_pruned_skeleton(mask, prefilter_radius,
-                                            min_length_pruning)  # MAGIC NUMBERS: Radius for pre-filtering, length for pruning branches
-        neighbours = scipy.ndimage.convolve(pth_skeleton, [[1, 1, 1], [1, 0, 1], [1, 1, 1]]) * pth_skeleton
-        termini_count = np.count_nonzero(neighbours == 1)
-        midline_count = np.count_nonzero(neighbours == 2) # not used?
-        branches_count = np.count_nonzero(neighbours > 2)
+        padded_mask = np.pad(mask, pad_width=1, mode='constant', constant_values=0)
+        termini_count = sys.maxsize
+        branches_count = sys.maxsize
+        neighbours = None
+        pth_skeleton = None
+        pruning = min_length_pruning
+        tries = 0
 
-        # trace, if a single line (two termini, zero branches)
-        if termini_count == 2 and branches_count == 0:
-            termini = neighbours.copy()
-            termini[termini > 1] = 0
-            termini_y, termini_x = skimage.morphology.local_maxima(termini, indices=True, allow_borders=False)
-            # trace from index 0
-            midline = [[termini_y[0], termini_x[0]]]
-            v = pth_skeleton[midline[-1][0], midline[-1][1]]
-            while v > 0:
-                v = 0
-                # mark visited pixels by setting to 0
-                pth_skeleton[midline[-1][0], midline[-1][1]] = 0
-                # for all neighbours...
-                for a in range(-1, 2):  # a is delta in x
-                    for b in range(-1, 2):  # b is delta in y
-                        # if a skeleton pixel, step in that direction
-                        if pth_skeleton[midline[-1][0] + b, midline[-1][1] + a] == 1:
-                            midline.append([midline[-1][0] + b, midline[-1][1] + a])
-                            v = pth_skeleton[midline[-1][0], midline[-1][1]]
-                            # break inner loop on match
-                            break
-                    # break outer loop with inner
-                    else:
-                        continue
-                    break
-        else:
-            return None
+        while termini_count != 2 or branches_count != 0:
+            tries += 1
+
+            pth_skeleton = self.mask_pruned_skeleton(padded_mask, prefilter_radius, pruning)
+            # MAGIC NUMBERS: Radius for pre-filtering, length for pruning branches
+
+            neighbours = scipy.ndimage.convolve(pth_skeleton, [[1, 1, 1], [1, 0, 1], [1, 1, 1]]) * pth_skeleton
+            pth_skeleton = pth_skeleton[1:-1, 1:-1]
+            neighbours = neighbours[1:-1, 1:-1]
+            termini_count = np.count_nonzero(neighbours == 1)
+            #midline_count = np.count_nonzero(neighbours == 2) # not used?
+            branches_count = np.count_nonzero(neighbours > 2)
+
+            if branches_count > 0:
+                pruning += 5
+            elif termini_count < 2:
+                pruning -= 1
+            print(f"tries: {tries}, branches: {branches_count}, pruning: {pruning}, termini: {termini_count}")
+
+        # trace, when a single line (two termini, zero branches)
+        termini = neighbours.copy()
+        termini[termini > 1] = 0
+        termini_y, termini_x = skimage.morphology.local_maxima(termini, indices=True, allow_borders=False)
+        # trace from index 0
+        midline = [[termini_y[0], termini_x[0]]]
+        v = pth_skeleton[midline[-1][0], midline[-1][1]]
+        while v > 0:
+            v = 0
+            # mark visited pixels by setting to 0
+            pth_skeleton[midline[-1][0], midline[-1][1]] = 0
+            # for all neighbours...
+            for a in range(-1, 2):  # a is delta in x
+                for b in range(-1, 2):  # b is delta in y
+                    # if a skeleton pixel, step in that direction
+                    if pth_skeleton[midline[-1][0] + b, midline[-1][1] + a] == 1:
+                        midline.append([midline[-1][0] + b, midline[-1][1] + a])
+                        v = pth_skeleton[midline[-1][0], midline[-1][1]]
+                        # break inner loop on match
+                        break
+                # break outer loop with inner
+                else:
+                    continue
+                break
+
 
         return midline
 
@@ -458,9 +477,9 @@ class FeatureExtraction:
         smallest_remaining = (yt[tail], xt[tail])
         print(xt)
         print(yt)
-        print(head)
-        print(tail)
-        print(smallest_below_neg_50)
+        #print(head)
+        #print(tail)
+        #print(smallest_below_neg_50)
         # Calculate distances to start_point_ml
         dist_to_start_below_neg_50 = np.linalg.norm(smallest_below_neg_50 - start_point_ml)
         if isinstance(dist_to_start_below_neg_50, np.ndarray) and dist_to_start_below_neg_50.shape == (2, 1, 10000):

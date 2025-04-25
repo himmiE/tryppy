@@ -55,7 +55,7 @@ class FileHandler:
                 filenames.append(self.get_image_path(folder_path, image_name))
 
         count_files = len(filenames)
-        print(f"The path for your data is: {self.data_dir / folder_name}")
+        print(f"The path for your data is: {folder_path}")
         print(f"The directory contains {count_files} suitable image files.")
         return filenames
 

@@ -3,6 +3,7 @@ import math
 import os.path
 import sys
 
+import networkx as nx
 import numpy as np
 import scipy
 from matplotlib import pyplot as plt
@@ -19,7 +20,8 @@ from scipy.optimize import fsolve
 from shapely.geometry import Polygon, LineString, Point
 from scipy.optimize import minimize
 from functools import partial
-
+from skimage.draw import polygon
+from skimage import measure, morphology
 
 from spatial_efd import spatial_efd
 
@@ -45,17 +47,20 @@ class FeatureExtraction:
         return result
 
     def plot(self, maske, contour=None, curvature=None, endpoints=None, midline=None, grid=None):
-        fig, ax = plt.subplots(1, 2)
+        fig, ax = plt.subplots(1, 2, sharex=True, sharey=True)
         title =""
 
         ax[0].imshow(maske.T, cmap='gray', origin='upper')
         ax[0].set_title('Maske')
+        ax[0].grid(True)
         ax[0].axis('off')
         if contour is not None:
+            ax[1].grid(True)
             title = "Contour"
-            ax[1].plot(contour[0], contour[1], color='cyan', linewidth=2, label='Contour')
-            if curvature is not None:
-
+            if curvature is None:
+                ax[1].plot(contour[0], contour[1], color='cyan', linewidth=2, label='Contour')
+            else:
+                ax[1].plot(contour[0], contour[1], color='cyan', linewidth=2)
                 points = np.array([contour[0], contour[1]]).T
                 segments = [points[i:i + 2] for i in range(len(points) - 1)]
                 lc = LineCollection(segments, cmap='viridis', linewidth=3, array=curvature,
@@ -70,23 +75,23 @@ class FeatureExtraction:
             ax[1].scatter([x_start, x_end], [y_start, y_end], color='red', marker='o', s=40, label='Endpoints')
 
         if midline is not None:
-            print(midline)
             title = title + ", midline"
-            midline = midline.squeeze()
-            ax[1].plot(midline[:, 0], midline[:, 1], color='lime', linewidth=2, linestyle='--', label='Midline')
+            y, x = zip(*midline)
+            ax[1].plot(y, x, color='orange', linewidth=2, label='Midline')
 
         if grid is not None:
             title = title + ", grid"
 
         ax[1].invert_yaxis()
 
-        if any([contour is not None, endpoints is not None, midline is not None]):
-            ax[1].legend(loc='lower right', fontsize='small')
+        #if any([contour is not None, endpoints is not None, midline is not None]):
+        #   ax[1].legend(loc='lower right', fontsize='small')
         ax[1].set_title(title)
         ax[1].axis('off')
         ax[1].set_aspect('equal', 'box')
 
-        #ax[1].tight_layout()
+        for ax in fig.get_axes():
+            print(ax.get_position())
         plt.show()
 
 
@@ -265,110 +270,48 @@ class FeatureExtraction:
 
         return min_value_below_second_threshold, smallest_remaining_index
 
-    def get_skeleton(self, mask, prefilter_radius, pruning):
-        pth_skeleton = self.mask_pruned_skeleton(mask, prefilter_radius, pruning)
-        neighbours = self.get_neighbours(pth_skeleton)
-        termini_count, branches_count = self.get_termini_branches_count(neighbours)
-        return abs((0-branches_count)+(2-termini_count)), neighbours, pth_skeleton
+    def fill_mask(selfself, mask, max_area):
+        filled_mask = mask.copy()
+        labeled_mask, num_objects = measure.label(filled_mask, connectivity=2, return_num=True)
+        for region in measure.regionprops(labeled_mask):
+            if region.area < max_area:
+                coords = region.coords
+                filled_mask[coords[:, 0], coords[:, 1]] = 1
+        return filled_mask
 
-    def get_termini_branches_count(self, neighbours):
-        termini_count = np.count_nonzero(neighbours == 1)
-        branches_count = np.count_nonzero(neighbours > 2)
-        return termini_count, branches_count
-
-    def opt_skeleton(self, mask, prefilter_radius, pruning): #TODO evtl. callback bei erreichen von 0 direkt abbrechen
-        return self.get_skeleton(mask, prefilter_radius, pruning)[0]
-
-    def get_midline(self, mask, prefilter_radius, min_length_pruning, show=0):
-
-        initial_guess = np.array([min_length_pruning])
-        func_to_minimize = partial(self.opt_skeleton, mask, prefilter_radius)
-        result = minimize(func_to_minimize, initial_guess, method='L-BFGS-B', bounds=[(30, 100)], options={'maxiter': 10})
-        _, neighbours, pth_skeleton = self.get_skeleton(mask, prefilter_radius, result.x[0])
-
-        plt.imshow(pth_skeleton, cmap='gray')
-        plt.title('Skeleton')
-        plt.show()
-
-        termini_count, branches_count = self.get_termini_branches_count(neighbours)
-        if termini_count != 2 or branches_count > 0:
-            return None
-
-        termini = neighbours.copy()
-        termini[termini > 1] = 0
-
-        positions = np.where(termini == 1)
-        #termini_y, termini_x = skimage.morphology.local_maxima(termini, indices=True, allow_borders=False)
-        # trace from index 0
-        midline = positions # [[termini_y[0], termini_x[0]]]
-        v = pth_skeleton[midline[-1][0], midline[-1][1]]
-        while v > 0:
-            v = 0
-            # mark visited pixels by setting to 0
-            pth_skeleton[midline[-1][0], midline[-1][1]] = 0
-            # for all neighbours...
-            for a in range(-1, 2):  # a is delta in x
-                for b in range(-1, 2):  # b is delta in y
-                    # if a skeleton pixel, step in that direction
-                    if pth_skeleton[midline[-1][0] + b, midline[-1][1] + a] == 1:
-                        midline.append([midline[-1][0] + b, midline[-1][1] + a])
-                        v = pth_skeleton[midline[-1][0], midline[-1][1]]
-                        # break inner loop on match
-                        break
-                # break outer loop with inner
-                else:
-                    continue
-                break
+    def get_midline(self, mask):
+        filled_mask = morphology.remove_small_holes(mask, area_threshold=100)
+        skeleton = skimage.morphology.skeletonize(filled_mask)
+        midline = self.skeleton_to_midline(skeleton)
         return midline
 
-    def get_neighbours(self, skeleton):
-        padded = np.pad(skeleton, pad_width=1, mode='constant', constant_values=0)
-        neighbours = scipy.ndimage.convolve(padded, [[1, 1, 1], [1, 0, 1], [1, 1, 1]]) * padded
-        neighbours = neighbours[1:-1, 1:-1]
-        return neighbours
-
-    def mask_pruned_skeleton(self, mask, prefilter_radius, prune_length):
-        skeleton = skimage.morphology.skeletonize(mask)
-        skeleton = skeleton.astype(np.uint8)
-        # make a neighbour count skeleton, 1 = terminus, 2 = arm, >2 = branch point
-        neighbours = self.get_neighbours(skeleton)
-        # filter for 1 neighbour only, ie terminus image, and use to list termini
-        termini = neighbours.copy()
-        termini[termini > 1] = 0
-        termini_y, termini_x = skimage.morphology.local_maxima(termini, indices=True, allow_borders=True)
-        # prune skeleton
-        for t in range(len(termini_x)):
-            length = 0
-            cx, cy = termini_x[t], termini_y[t]
-            v = neighbours[cy, cx]
-            while length < prune_length + 2 and v > 0 and v < 3:
-                v = 0
-                # mark visited pixels with 2, if removable (not a branch)
-                if neighbours[cy, cx] < 3:
-                    skeleton[cy, cx] = 2
-                # for all neighbours...
-                for a in range(-1, 2):
-                    for b in range(-1, 2):
-                        # if a skeleton pixel, step in that direction
-                        if (a != 0 or b != 0) and skeleton[cy + b, cx + a] == 1:
-                            length += 1
-                            v = neighbours[cy, cx]
-                            cy += b
-                            cx += a
-                            # break inner loop on match
-                            break
-                    # break outer loop with inner
-                    else:
+    def skeleton_to_midline(self, skeleton):
+        # skeleton to graph
+        G = nx.Graph()
+        rows, cols = np.where(skeleton)
+        for y, x in zip(rows, cols):
+            for dy in [-1, 0, 1]:
+                for dx in [-1, 0, 1]:
+                    if dy == 0 and dx == 0:
                         continue
-                    break
-            # if short enough then prune by replacing visited pixels (2) with 0
-            if length < prune_length:
-                skeleton[skeleton == 2] = 0
-            else:
-                skeleton[skeleton == 2] = 1
-        # re-skeletonise, to handle messy branch points left over
-        skeleton = skimage.morphology.medial_axis(skeleton, return_distance=False).astype(np.uint8)
-        return skeleton
+                    ny, nx_ = y + dy, x + dx
+                    if (0 <= ny < skeleton.shape[0]) and (0 <= nx_ < skeleton.shape[1]):
+                        if skeleton[ny, nx_]:
+                            G.add_edge((y, x), (ny, nx_))
+
+        #remove cycles
+        T = nx.minimum_spanning_tree(G)
+        # find longest path through skeleton
+        nodes = list(T.nodes)
+        longest_path = []
+        max_length = 0
+        for node in nodes:
+            lengths = nx.single_source_dijkstra_path_length(T, node)
+            farthest_node, length = max(lengths.items(), key=lambda x: x[1])
+            if length > max_length:
+                max_length = length
+                longest_path = nx.dijkstra_path(T, node, farthest_node)
+        return longest_path
 
     # Correct arc length calculation
     def arc_length(self, fx, fy, a, b):
@@ -655,32 +598,32 @@ class FeatureExtraction:
         endpoints = dict()
         grids = dict()
         for name, image in images.items():
-            self.plot(image)
+            #self.plot(image)
             contour_x, contour_y = self.get_contour(image)
 
             if contour_x is None:
                 ValueError("no contour was calculated")
                 continue
-            self.plot(image, contour=(contour_x, contour_y))
+            #self.plot(image, contour=(contour_x, contour_y))
 
             curvatures[name] = self.calculate_curvature(contour_x, contour_y)
             if curvatures[name] is None:
                 ValueError("no curvature was calculated")
                 continue
-            self.plot(image, contour=(contour_x, contour_y), curvature=curvatures[name])
+            #self.plot(image, contour=(contour_x, contour_y), curvature=curvatures[name])
 
-            midline = self.get_midline(image, 2, 50)
+            midline = self.get_midline(image)
             if midline is None:
                 ValueError("no midline was calculated")
                 continue
-            self.plot(image, contour=(contour_x, contour_y), curvature=curvatures[name], midline=midline)
+            #self.plot(image, contour=(contour_x, contour_y), curvature=curvatures[name], midline=midline)
             #save midline?
 
             endpoints[name] = self.find_endpoints(contour_x, contour_y, curvatures[name], midline)
             if endpoints[name] is None:
                 ValueError("no endpoints were calculated")
                 continue
-            self.plot(image, contour=(contour_x, contour_y), curvature=curvatures[name], endpoints=endpoints[name])
+            self.plot(image, contour=(contour_x, contour_y), curvature=curvatures[name], midline=midline, endpoints=endpoints[name])
             grid = self.get_grid((contour_x, contour_y), midline, endpoints[name], (320,320))
 
             if grid is None:

@@ -21,6 +21,13 @@ class Tryppy:
             self.config = json.load(config_file)
             self.file_handler = FileHandler(datapath)
 
+    def get_features_to_save(self):
+        features_to_save = []
+        for feature in self.config['tasks']['feature_extraction']:
+            if self.config['tasks']['feature_extraction'][feature]['save_data']['enabled']:
+                features_to_save.append(feature)
+                #self.file_handler.save_feature_data(feature, features[feature])
+        return features_to_save
 
     def run(self):
         images = self.file_handler.get_input_files(self.config["input_folder_name"], keep_input_filenames=self.config["keep_input_filenames"])
@@ -37,10 +44,8 @@ class Tryppy:
             images = instance_segmentation_result
 
         if self.config['tasks']['feature_extraction']['enabled']:
-            features = FeatureExtraction(self.config['tasks']['feature_extraction']['grid_size']).run(images)
-            for feature in features:
-                if self.config['tasks']['feature_extraction'][feature]['save_data']['enabled']:
-                    self.file_handler.save_feature_data(feature, features[feature])
+            features_to_save = self.get_features_to_save()
+            features = FeatureExtraction(self.config['tasks']['feature_extraction']['grid_size']).run(images, features_to_save)
             if self.config['tasks']['feature_extraction']['save_image']['enabled']:
                 self.file_handler.save_feature_images(features)
             images = features

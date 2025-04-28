@@ -593,9 +593,11 @@ class FeatureExtraction:
             # Todo Throw exception
             pass
 
-    def run(self, images):
+    def run(self, images, save=[]):
+        contours = dict()
         curvatures = dict()
-        endpoints = dict()
+        midlines = dict()
+        endpoints_s = dict()
         grids = dict()
         for name, image in images.items():
             #self.plot(image)
@@ -604,30 +606,34 @@ class FeatureExtraction:
             if contour_x is None:
                 ValueError("no contour was calculated")
                 continue
+            contours[name] = (contour_x, contour_y)
             #self.plot(image, contour=(contour_x, contour_y))
 
-            curvatures[name] = self.calculate_curvature(contour_x, contour_y)
-            if curvatures[name] is None:
+            curvature = self.calculate_curvature(contour_x, contour_y)
+            if curvature is None:
                 ValueError("no curvature was calculated")
                 continue
+            curvatures[name] = curvature
             #self.plot(image, contour=(contour_x, contour_y), curvature=curvatures[name])
 
             midline = self.get_midline(image)
             if midline is None:
                 ValueError("no midline was calculated")
                 continue
-            #self.plot(image, contour=(contour_x, contour_y), curvature=curvatures[name], midline=midline)
-            #save midline?
+            midlines[name] = midline
+            #self.plot(image, contour=(contour_x, contour_y), curvature=curvature, midline=midline)
 
-            endpoints[name] = self.find_endpoints(contour_x, contour_y, curvatures[name], midline)
-            if endpoints[name] is None:
+            endpoints = self.find_endpoints(contour_x, contour_y, curvature, midline)
+            if endpoints is None:
                 ValueError("no endpoints were calculated")
                 continue
-            self.plot(image, contour=(contour_x, contour_y), curvature=curvatures[name], midline=midline, endpoints=endpoints[name])
-            grid = self.get_grid((contour_x, contour_y), midline, endpoints[name], (320,320))
+            endpoints_s[name] = endpoints
+            self.plot(image, contour=(contour_x, contour_y), curvature=curvatures[name], midline=midlines[name], endpoints=endpoints)
+            grid = self.get_grid((contour_x, contour_y), midlines[name], endpoints, (320,320))
 
             if grid is None:
                 ValueError("no grid was calculated")
                 continue
             else:
                 grids[name] = grid
+

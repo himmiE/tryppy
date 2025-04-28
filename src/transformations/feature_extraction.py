@@ -6,6 +6,7 @@ import sys
 import numpy as np
 import scipy
 from matplotlib import pyplot as plt
+from matplotlib.collections import LineCollection
 from scipy.integrate import quad
 import skimage
 from scipy.signal import find_peaks
@@ -40,12 +41,57 @@ class FeatureExtraction:
         result = [i % list_len for i in indices]
         return result
 
+    def plot(self, maske, contour=None, curvature=None, endpoints=None, midline=None, grid=None):
+        fig, ax = plt.subplots(1, 2)
+        title =""
+
+        ax[0].imshow(maske.T, cmap='gray', origin='upper')
+        ax[0].set_title('Maske')
+        ax[0].axis('off')
+        if contour is not None:
+            title = "Contour"
+            ax[1].plot(contour[0], contour[1], color='cyan', linewidth=2, label='Contour')
+            if curvature is not None:
+
+                points = np.array([contour[0], contour[1]]).T
+                segments = [points[i:i + 2] for i in range(len(points) - 1)]
+                lc = LineCollection(segments, cmap='viridis', linewidth=3, array=curvature,
+                                    norm=plt.Normalize(vmin=np.min(curvature), vmax=np.max(curvature)), label='Contour/Curvature')
+                ax[1].add_collection(lc)
+
+        if endpoints is not None:
+            title = title + ", enpoints"
+            start_idx, end_idx = endpoints
+            x_start, y_start = contour[0][start_idx], contour[1][start_idx]
+            x_end, y_end = contour[0][end_idx], contour[1][end_idx]
+            ax[1].scatter([x_start, x_end], [y_start, y_end], color='red', marker='o', s=40, label='Endpoints')
+
+        if midline is not None:
+            title = title + ", midline"
+            midline = midline.squeeze()
+            ax[1].plot(midline[:, 0], midline[:, 1], color='lime', linewidth=2, linestyle='--', label='Midline')
+
+        if grid is not None:
+            title = title + ", grid"
+
+        ax[1].invert_yaxis()
+
+        if any([contour is not None, endpoints is not None, midline is not None]):
+            ax[1].legend(loc='lower right', fontsize='small')
+        ax[1].set_title(title)
+        ax[1].axis('off')
+        #ax[1].invert_yaxis()  # Umkehren der Y-Achse
+
+        #ax[1].tight_layout()
+        plt.show()
+
 
     def get_contour(self, image):
         image = skimage.morphology.area_closing(image, 10)
         contours = skimage.measure.find_contours(image, 0.8)
 
         if not contours:
+            print("No contours found, using 0.5 as area threshold")
             contours = skimage.measure.find_contours(image, 0.5)
 
 
@@ -114,7 +160,6 @@ class FeatureExtraction:
             head, tail = self.find_minima_with_midline(contour_x, contour_y)
         return head, tail
 
-    from shapely.geometry import LineString, Point, Polygon
 
     def extend_line_to_contour(self, start_point, direction, contour_x, contour_y, length=100):
         contour_points = list(zip(contour_x, contour_y))
@@ -249,9 +294,15 @@ class FeatureExtraction:
         # trace, when a single line (two termini, zero branches)
         termini = neighbours.copy()
         termini[termini > 1] = 0
-        termini_y, termini_x = skimage.morphology.local_maxima(termini, indices=True, allow_borders=False)
+
+        plt.imshow(termini, cmap='gray')
+        plt.title('Eingabebild')
+        plt.show()
+
+        positions = np.where(termini == 1)
+        #termini_y, termini_x = skimage.morphology.local_maxima(termini, indices=True, allow_borders=False)
         # trace from index 0
-        midline = [[termini_y[0], termini_x[0]]]
+        midline = positions # [[termini_y[0], termini_x[0]]]
         v = pth_skeleton[midline[-1][0], midline[-1][1]]
         while v > 0:
             v = 0
@@ -270,8 +321,6 @@ class FeatureExtraction:
                 else:
                     continue
                 break
-
-
         return midline
 
     def mask_pruned_skeleton(self, mask, prefilter_radius, prune_length):
@@ -463,7 +512,7 @@ class FeatureExtraction:
         mask[rr, cc] = 1
 
         midline = self.get_midline(mask, 2, 50)
-        print(midline)
+        #print(midline)
 
         midline = np.array(midline)
         coords_ml = midline.copy()
@@ -475,8 +524,8 @@ class FeatureExtraction:
         #    break
         smallest_below_neg_50 = (yt[head], xt[head])
         smallest_remaining = (yt[tail], xt[tail])
-        print(xt)
-        print(yt)
+        #print(xt)
+        #print(yt)
         #print(head)
         #print(tail)
         #print(smallest_below_neg_50)
@@ -499,6 +548,12 @@ class FeatureExtraction:
         # Smooth the extended midline
         window_length = 5  # Must be an odd number, try different values
         polyorder = 3  # Try different values
+        print(extended_coords_ml[:, 1])
+        print(extended_coords_ml[:, 0])
+
+        if len(extended_coords_ml[:, 1]) < window_length:
+            return None
+
         smoothed_x_ml = savgol_filter(extended_coords_ml[:, 1], window_length, polyorder)
         smoothed_y_ml = savgol_filter(extended_coords_ml[:, 0], window_length, polyorder)
 
@@ -599,11 +654,25 @@ class FeatureExtraction:
         endpoints = dict()
         grids = dict()
         for name, image in images.items():
+            self.plot(image)
             contour_x, contour_y = self.get_contour(image)
+
+            if contour_x is None:
+                ValueError("no contour was calculated")
+            self.plot(image, contour=(contour_x, contour_y))
             curvatures[name] = self.calculate_curvature(contour_x, contour_y)
+
+            if curvatures[name] is None:
+                ValueError("no curvature was calculated")
+            self.plot(image, contour=(contour_x, contour_y), curvature=curvatures[name])
             endpoints[name] = self.find_endpoints(contour_x, contour_y)
+
+            if endpoints[name] is None:
+                ValueError("no endpoints were calculated")
+            self.plot(image, contour=(contour_x, contour_y), curvature=curvatures[name], endpoints=endpoints[name])
             grid = self.get_grid((contour_x, contour_y), endpoints[name], (320,320))
-            if not grid:
-                continue
+
+            if grid is None:
+                ValueError("no grid was calculated")
             else:
                 grids[name] = grid

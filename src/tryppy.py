@@ -1,3 +1,4 @@
+import itertools
 import json
 import os
 import pkgutil
@@ -11,6 +12,7 @@ from src.transformations.segmentation import Segmentation
 
 class Tryppy:
     def __init__(self, datapath, config_filename='config.json'):
+        self.incomplete_data = dict() #TODO
         config_path = datapath / config_filename
 
         self.ensure_config_exists(config_path)

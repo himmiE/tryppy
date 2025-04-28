@@ -7,6 +7,7 @@ import numpy as np
 import scipy
 from matplotlib import pyplot as plt
 from matplotlib.collections import LineCollection
+from networkx.classes import neighbors
 from scipy.integrate import quad
 import skimage
 from scipy.signal import find_peaks
@@ -16,6 +17,8 @@ from scipy.signal import savgol_filter
 from scipy.interpolate import UnivariateSpline
 from scipy.optimize import fsolve
 from shapely.geometry import Polygon, LineString, Point
+from scipy.optimize import minimize
+from functools import partial
 
 
 from spatial_efd import spatial_efd
@@ -67,6 +70,7 @@ class FeatureExtraction:
             ax[1].scatter([x_start, x_end], [y_start, y_end], color='red', marker='o', s=40, label='Endpoints')
 
         if midline is not None:
+            print(midline)
             title = title + ", midline"
             midline = midline.squeeze()
             ax[1].plot(midline[:, 0], midline[:, 1], color='lime', linewidth=2, linestyle='--', label='Midline')
@@ -80,7 +84,7 @@ class FeatureExtraction:
             ax[1].legend(loc='lower right', fontsize='small')
         ax[1].set_title(title)
         ax[1].axis('off')
-        #ax[1].invert_yaxis()  # Umkehren der Y-Achse
+        ax[1].set_aspect('equal', 'box')
 
         #ax[1].tight_layout()
         plt.show()
@@ -151,13 +155,13 @@ class FeatureExtraction:
 
         return np.array(curvatures)
 
-    def find_endpoints(self, contour_x, contour_y, threshold=True):
+    def find_endpoints(self, contour_x, contour_y, curvature, midline, threshold=True):
         head = None
         tail = None
         if threshold:
-            head, tail = self.find_minima_with_threshold(contour_x, contour_y)
+            head, tail = self.find_minima_with_threshold(contour_x, contour_y, curvature)
         if head is None or tail is None:
-            head, tail = self.find_minima_with_midline(contour_x, contour_y)
+            head, tail = self.find_minima_with_midline(contour_x, contour_y, curvature, midline)
         return head, tail
 
 
@@ -186,9 +190,8 @@ class FeatureExtraction:
             print("no intersection could be found between the linear midline extension and the contour")
             return None
 
-    def find_minima_with_midline(self, xt, yt, threshold=-20):
+    def find_minima_with_midline(self, xt, yt, midline, threshold=-20):
         mask = np.zeros((self.gridsize, self.gridsize), dtype=np.uint8)
-        midline = self.get_midline(mask, 2, 50)
 
         midline = np.array(midline)
         start_point = midline[0]
@@ -226,11 +229,10 @@ class FeatureExtraction:
 
         return best_start_idx, best_end_idx
 
-    def find_minima_with_threshold(self, xt, yt, first_threshold=-20, second_threshold=-45, show=0):
+    def find_minima_with_threshold(self, xt, yt, curvature, first_threshold=-20, second_threshold=-45, show=0):
         min_value_below_second_threshold = None
         smallest_remaining_index = None
 
-        curvature = self.calculate_curvature(xt, yt)
         min_distance = int(len(curvature)*0.4)
         minima_indices, _ = find_peaks(-curvature)
         minima_values = curvature[minima_indices]
@@ -263,41 +265,37 @@ class FeatureExtraction:
 
         return min_value_below_second_threshold, smallest_remaining_index
 
+    def get_skeleton(self, mask, prefilter_radius, pruning):
+        pth_skeleton = self.mask_pruned_skeleton(mask, prefilter_radius, pruning)
+        neighbours = self.get_neighbours(pth_skeleton)
+        termini_count, branches_count = self.get_termini_branches_count(neighbours)
+        return abs((0-branches_count)+(2-termini_count)), neighbours, pth_skeleton
+
+    def get_termini_branches_count(self, neighbours):
+        termini_count = np.count_nonzero(neighbours == 1)
+        branches_count = np.count_nonzero(neighbours > 2)
+        return termini_count, branches_count
+
+    def opt_skeleton(self, mask, prefilter_radius, pruning): #TODO evtl. callback bei erreichen von 0 direkt abbrechen
+        return self.get_skeleton(mask, prefilter_radius, pruning)[0]
+
     def get_midline(self, mask, prefilter_radius, min_length_pruning, show=0):
-        padded_mask = np.pad(mask, pad_width=1, mode='constant', constant_values=0)
-        termini_count = sys.maxsize
-        branches_count = sys.maxsize
-        neighbours = None
-        pth_skeleton = None
-        pruning = min_length_pruning
-        tries = 0
 
-        while termini_count != 2 or branches_count != 0:
-            tries += 1
+        initial_guess = np.array([min_length_pruning])
+        func_to_minimize = partial(self.opt_skeleton, mask, prefilter_radius)
+        result = minimize(func_to_minimize, initial_guess, method='L-BFGS-B', bounds=[(30, 100)], options={'maxiter': 10})
+        _, neighbours, pth_skeleton = self.get_skeleton(mask, prefilter_radius, result.x[0])
 
-            pth_skeleton = self.mask_pruned_skeleton(padded_mask, prefilter_radius, pruning)
-            # MAGIC NUMBERS: Radius for pre-filtering, length for pruning branches
+        plt.imshow(pth_skeleton, cmap='gray')
+        plt.title('Skeleton')
+        plt.show()
 
-            neighbours = scipy.ndimage.convolve(pth_skeleton, [[1, 1, 1], [1, 0, 1], [1, 1, 1]]) * pth_skeleton
-            pth_skeleton = pth_skeleton[1:-1, 1:-1]
-            neighbours = neighbours[1:-1, 1:-1]
-            termini_count = np.count_nonzero(neighbours == 1)
-            #midline_count = np.count_nonzero(neighbours == 2) # not used?
-            branches_count = np.count_nonzero(neighbours > 2)
+        termini_count, branches_count = self.get_termini_branches_count(neighbours)
+        if termini_count != 2 or branches_count > 0:
+            return None
 
-            if branches_count > 0:
-                pruning += 5
-            elif termini_count < 2:
-                pruning -= 1
-            print(f"tries: {tries}, branches: {branches_count}, pruning: {pruning}, termini: {termini_count}")
-
-        # trace, when a single line (two termini, zero branches)
         termini = neighbours.copy()
         termini[termini > 1] = 0
-
-        plt.imshow(termini, cmap='gray')
-        plt.title('Eingabebild')
-        plt.show()
 
         positions = np.where(termini == 1)
         #termini_y, termini_x = skimage.morphology.local_maxima(termini, indices=True, allow_borders=False)
@@ -323,15 +321,21 @@ class FeatureExtraction:
                 break
         return midline
 
+    def get_neighbours(self, skeleton):
+        padded = np.pad(skeleton, pad_width=1, mode='constant', constant_values=0)
+        neighbours = scipy.ndimage.convolve(padded, [[1, 1, 1], [1, 0, 1], [1, 1, 1]]) * padded
+        neighbours = neighbours[1:-1, 1:-1]
+        return neighbours
+
     def mask_pruned_skeleton(self, mask, prefilter_radius, prune_length):
         skeleton = skimage.morphology.skeletonize(mask)
         skeleton = skeleton.astype(np.uint8)
         # make a neighbour count skeleton, 1 = terminus, 2 = arm, >2 = branch point
-        neighbours = scipy.ndimage.convolve(skeleton, [[1, 1, 1], [1, 0, 1], [1, 1, 1]]) * skeleton
+        neighbours = self.get_neighbours(skeleton)
         # filter for 1 neighbour only, ie terminus image, and use to list termini
         termini = neighbours.copy()
         termini[termini > 1] = 0
-        termini_y, termini_x = skimage.morphology.local_maxima(termini, indices=True, allow_borders=False)
+        termini_y, termini_x = skimage.morphology.local_maxima(termini, indices=True, allow_borders=True)
         # prune skeleton
         for t in range(len(termini_x)):
             length = 0
@@ -501,7 +505,7 @@ class FeatureExtraction:
 
         return cells
 
-    def get_grid(self, contour, endpoints, image_shape):
+    def get_grid(self, contour, midline, endpoints, image_shape):
 
         xt, yt = contour
         distances = []
@@ -510,9 +514,6 @@ class FeatureExtraction:
         mask = np.zeros((grid_size, grid_size), dtype=np.uint8)
         rr, cc = skimage.draw.polygon(yt, xt, image_shape)
         mask[rr, cc] = 1
-
-        midline = self.get_midline(mask, 2, 50)
-        #print(midline)
 
         midline = np.array(midline)
         coords_ml = midline.copy()
@@ -659,20 +660,31 @@ class FeatureExtraction:
 
             if contour_x is None:
                 ValueError("no contour was calculated")
+                continue
             self.plot(image, contour=(contour_x, contour_y))
-            curvatures[name] = self.calculate_curvature(contour_x, contour_y)
 
+            curvatures[name] = self.calculate_curvature(contour_x, contour_y)
             if curvatures[name] is None:
                 ValueError("no curvature was calculated")
+                continue
             self.plot(image, contour=(contour_x, contour_y), curvature=curvatures[name])
-            endpoints[name] = self.find_endpoints(contour_x, contour_y)
 
+            midline = self.get_midline(image, 2, 50)
+            if midline is None:
+                ValueError("no midline was calculated")
+                continue
+            self.plot(image, contour=(contour_x, contour_y), curvature=curvatures[name], midline=midline)
+            #save midline?
+
+            endpoints[name] = self.find_endpoints(contour_x, contour_y, curvatures[name], midline)
             if endpoints[name] is None:
                 ValueError("no endpoints were calculated")
+                continue
             self.plot(image, contour=(contour_x, contour_y), curvature=curvatures[name], endpoints=endpoints[name])
-            grid = self.get_grid((contour_x, contour_y), endpoints[name], (320,320))
+            grid = self.get_grid((contour_x, contour_y), midline, endpoints[name], (320,320))
 
             if grid is None:
                 ValueError("no grid was calculated")
+                continue
             else:
                 grids[name] = grid

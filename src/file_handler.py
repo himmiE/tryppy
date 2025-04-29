@@ -1,3 +1,4 @@
+import json
 import os
 import numpy as np
 from pathlib import Path
@@ -65,6 +66,13 @@ class FileHandler:
         for name, image in images.items():
             image_path = self.data_dir / folder_name / f"{name}.npy"
             np.save(file=image_path, arr=image)
+
+    def save_as_json_files(self, folder_name, filename, data):
+        folder_path = self.data_dir / folder_name
+        os.makedirs(folder_path, exist_ok=True)
+        file_path = self.data_dir / folder_name / f"{filename}.json"
+        json.dump(data, file_path)
+
 
     def save_feature_data(self, feature, param):
         if feature == "contour":

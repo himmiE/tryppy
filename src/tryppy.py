@@ -45,7 +45,7 @@ class Tryppy:
 
         if self.config['tasks']['feature_extraction']['enabled']:
             features_to_save = self.get_features_to_save()
-            features = FeatureExtraction(self.config['tasks']['feature_extraction']['grid_size']).run(images, features_to_save)
+            features = FeatureExtraction(self.config, self.file_handler).run(images, features_to_save)
             if self.config['tasks']['feature_extraction']['save_image']['enabled']:
                 self.file_handler.save_feature_images(features)
             images = features

@@ -1,36 +1,28 @@
 import glob
 import math
 import os.path
-import sys
-
 import networkx as nx
 import numpy as np
-import scipy
 from matplotlib import pyplot as plt
 from matplotlib.collections import LineCollection
-from networkx.classes import neighbors
 from scipy.integrate import quad
 import skimage
 from scipy.signal import find_peaks
-import cv2 #opencv-python
 import warnings
 from scipy.signal import savgol_filter
 from scipy.interpolate import UnivariateSpline
 from scipy.optimize import fsolve
 from shapely.geometry import Polygon, LineString, Point
-from scipy.optimize import minimize
-from functools import partial
-from skimage.draw import polygon
 from skimage import measure, morphology
-
+from src.file_handler import FileHandler
 from spatial_efd import spatial_efd
 
 
 
 class FeatureExtraction:
-    def __init__(self, gridsize):
-        self.gridsize = gridsize
-        pass
+    def __init__(self, config, file_handler):
+        self.file_handler = file_handler
+        self.config = config
 
     def normalize_coordinates(self, xt, yt):
         lengths = np.sqrt(np.diff(xt) ** 2 + np.diff(yt) ** 2)
@@ -593,47 +585,76 @@ class FeatureExtraction:
             # Todo Throw exception
             pass
 
-    def run(self, images, save=[]):
+    def calculate_data_structures(self, images, features):
         contours = dict()
         curvatures = dict()
         midlines = dict()
         endpoints_s = dict()
         grids = dict()
-        for name, image in images.items():
-            #self.plot(image)
+        data_structures = {
+            'contours': contours,
+            'curvatures': curvatures,
+            'midlines': midlines,
+            'endpoints_s': endpoints_s,
+            'grids': grids
+        }
+        for name, image in images.items():  # TODO: calculate only what is desired
             contour_x, contour_y = self.get_contour(image)
 
             if contour_x is None:
                 ValueError("no contour was calculated")
                 continue
             contours[name] = (contour_x, contour_y)
-            #self.plot(image, contour=(contour_x, contour_y))
 
             curvature = self.calculate_curvature(contour_x, contour_y)
             if curvature is None:
                 ValueError("no curvature was calculated")
                 continue
             curvatures[name] = curvature
-            #self.plot(image, contour=(contour_x, contour_y), curvature=curvatures[name])
 
             midline = self.get_midline(image)
             if midline is None:
                 ValueError("no midline was calculated")
                 continue
             midlines[name] = midline
-            #self.plot(image, contour=(contour_x, contour_y), curvature=curvature, midline=midline)
 
             endpoints = self.find_endpoints(contour_x, contour_y, curvature, midline)
             if endpoints is None:
                 ValueError("no endpoints were calculated")
                 continue
             endpoints_s[name] = endpoints
-            self.plot(image, contour=(contour_x, contour_y), curvature=curvatures[name], midline=midlines[name], endpoints=endpoints)
-            grid = self.get_grid((contour_x, contour_y), midlines[name], endpoints, (320,320))
-
+            self.plot(image, contour=(contour_x, contour_y), curvature=curvatures[name], midline=midlines[name],
+                      endpoints=endpoints)
+            grid = self.get_grid((contour_x, contour_y), midlines[name], endpoints, (320, 320))
             if grid is None:
                 ValueError("no grid was calculated")
                 continue
             else:
                 grids[name] = grid
+            return data_structures
+
+    def save_data_structures(self, save_raw_features, data_structures):
+        structures_to_save = [k for k, v in save_raw_features.items() if v == 1]
+
+        for structure_name in structures_to_save:
+            structure = data_structures[structure_name]
+            filename = f"{structure_name}.json"
+            foldername = "raw_data_structures"
+            self.file_handler.save_as_json_files(foldername, filename, structure)
+
+    def run(self, images, save_raw_features={}, df_features=[], save_visualisations={}, n_visualisations=4):
+        # 1. first calculate all the needed data structures
+        data_structures = self.calculate_data_structures(images, save_raw_features.keys())
+
+        # 1.2. save this data, where needed
+        self.save_data_structures(save_raw_features, data_structures)
+
+        # 2. derive relevant features
+        
+
+
+
+
+
+        # 2. from these datastructures derive wanted features
 

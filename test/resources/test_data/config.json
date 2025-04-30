@@ -1,0 +1,30 @@
+{
+  "seed": 42,
+  "model_name": "default",
+  "input_folder_name": "instances",
+  "keep_input_filenames": true,
+  "weights_path": "resources\\models\\default\\unet_model_30May24_Combined.weights.h5",
+  "tasks": {
+    "segmentation": {
+      "enabled": false,
+      "save_output": true
+    },
+    "instance_segmentation": {
+      "enabled": false,
+      "save_output": true
+    },
+    "feature_extraction": {
+      "enabled": true,
+      "save_data": ["contour", "curvature", "midline", "endpoints", "grid"],
+      "save_plots": 4,
+      "plot_features": ["contour", "endpoints"],
+      "image_size": 320,
+      "show_plots": false
+    },
+    "classification": {
+      "enabled": false,
+      "save_output": true
+    }
+  },
+  "output_dir": ""
+}

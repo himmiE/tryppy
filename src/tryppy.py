@@ -9,7 +9,6 @@ from src.transformations.feature_extraction import FeatureExtraction
 from src.transformations.instance_segmentation import InstanceSegmentation
 from src.transformations.segmentation import Segmentation
 
-
 class Tryppy:
     def __init__(self, datapath, config_filename='config.json'):
         self.incomplete_data = dict() #TODO
@@ -21,12 +20,13 @@ class Tryppy:
             self.config = json.load(config_file)
             self.file_handler = FileHandler(datapath)
 
+        import warnings
+        warnings.filterwarnings("ignore")
+
     def get_features_to_save(self):
         features_to_save = []
-        for feature in self.config['tasks']['feature_extraction']:
-            if self.config['tasks']['feature_extraction'][feature]['save_data']['enabled']:
-                features_to_save.append(feature)
-                #self.file_handler.save_feature_data(feature, features[feature])
+        for feature in self.config['tasks']['feature_extraction']['save_data']:
+            features_to_save.append(feature)
         return features_to_save
 
     def run(self):
@@ -46,8 +46,6 @@ class Tryppy:
         if self.config['tasks']['feature_extraction']['enabled']:
             features_to_save = self.get_features_to_save()
             features = FeatureExtraction(self.config, self.file_handler).run(images, features_to_save)
-            if self.config['tasks']['feature_extraction']['save_image']['enabled']:
-                self.file_handler.save_feature_images(features)
             images = features
 
         if self.config['tasks']['classification']['enabled']:

@@ -1,11 +1,11 @@
 import pathlib
 import unittest
-
 from src.tryppy import Tryppy
-
+import matplotlib
 
 class TryptagTest(unittest.TestCase):
     def test_tryptag_run(self):
+        matplotlib.use("TkAgg")
         current_dir = pathlib.Path(__file__).parent
         data_path = current_dir / "resources" / "test_data"
         tryptag = Tryppy(data_path)

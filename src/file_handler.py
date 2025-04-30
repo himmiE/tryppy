@@ -71,25 +71,24 @@ class FileHandler:
         folder_path = self.data_dir / folder_name
         os.makedirs(folder_path, exist_ok=True)
         file_path = self.data_dir / folder_name / f"{filename}.json"
-        json.dump(data, file_path)
+        file = open(file_path, "w")
+        json.dump(data, file)
 
+    def save_numpy_data(self, folder_name, filename, data):
+        folder_path = self.data_dir / folder_name
+        os.makedirs(folder_path, exist_ok=True)
+        file_path = self.data_dir / folder_name / filename
+        np.save(file_path, data)
 
     def save_feature_data(self, feature, param):
         if feature == "contour":
             pass
         pass
-    #ToDo: what is to be saved?
-    # curvature: 2 numpy arrays
-    # endpoints: 2 x and y coordinates
-    # spline:
-    # extended_midline: REMOVE
-    # normals: REMOVE
-    # grid:
 
-    def save_feature_images(self, features):
-        #ToDo: gernerate images
-        images = {}
-
-        self.save_images_to("feature_plot", images)
+    def save_plot(self, folder_name, filename, plt):
+        folder_path = self.data_dir / folder_name
+        os.makedirs(folder_path, exist_ok=True)
+        file_path = self.data_dir / folder_name / f"{filename}.png"
+        plt.savefig(file_path)
         pass
 

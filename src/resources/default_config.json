@@ -5,22 +5,22 @@
   "weights_path": "resources\\models\\default\\unet_model_30May24_Combined.weights.h5",
   "tasks": {
     "segmentation": {
-      "enabled": true,
+      "enabled": false,
       "save_output": true
     },
     "instance_segmentation": {
-      "enabled": true,
+      "enabled": false,
       "save_output": true
     },
     "feature_extraction": {
       "enabled": true,
-      "save_output": true,
-      "save_plots": true,
+      "save_data": ["contour", "curvature", "midline", "endpoints", "grid"],
+      "save_plots": 4,
       "plot_features": ["curvature", "endpoints"],
       "grid_size": 320
     },
     "classification": {
-      "enabled": true,
+      "enabled": false,
       "save_output": true
     }
   },

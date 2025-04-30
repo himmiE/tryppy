@@ -1,28 +1,32 @@
 import glob
 import math
 import os.path
+import random
 import networkx as nx
 import numpy as np
 from matplotlib import pyplot as plt
 from matplotlib.collections import LineCollection
-from scipy.integrate import quad
+from scipy.integrate import quad, IntegrationWarning
 import skimage
 from scipy.signal import find_peaks
 import warnings
 from scipy.signal import savgol_filter
 from scipy.interpolate import UnivariateSpline
 from scipy.optimize import fsolve
+from shapely import affinity
 from shapely.geometry import Polygon, LineString, Point
 from skimage import measure, morphology
+from tqdm import tqdm
+
 from src.file_handler import FileHandler
 from spatial_efd import spatial_efd
-
 
 
 class FeatureExtraction:
     def __init__(self, config, file_handler):
         self.file_handler = file_handler
         self.config = config
+        self.image_size = config['tasks']['feature_extraction']['image_size']
 
     def normalize_coordinates(self, xt, yt):
         lengths = np.sqrt(np.diff(xt) ** 2 + np.diff(yt) ** 2)
@@ -38,7 +42,8 @@ class FeatureExtraction:
         result = [i % list_len for i in indices]
         return result
 
-    def plot(self, maske, contour=None, curvature=None, endpoints=None, midline=None, grid=None):
+    def plot(self, maske, contour=None, curvature=None, endpoints=None, midline=None, grid=None, show=True, save=False, name=""):
+        # TODO: plot midline properly on top of the other features
         fig, ax = plt.subplots(1, 2, sharex=True, sharey=True)
         title =""
 
@@ -82,9 +87,14 @@ class FeatureExtraction:
         ax[1].axis('off')
         ax[1].set_aspect('equal', 'box')
 
-        for ax in fig.get_axes():
-            print(ax.get_position())
-        plt.show()
+        if save:
+            self.file_handler.save_plot("plots", name, plt)
+
+        if show:
+            plt.show()
+        else:
+            plt.close(fig)
+        return plt
 
 
     def get_contour(self, image):
@@ -98,7 +108,6 @@ class FeatureExtraction:
 
         best_contour = None
         largest_area = 0
-
 
         for c in contours:
             try:
@@ -158,21 +167,49 @@ class FeatureExtraction:
         if threshold:
             head, tail = self.find_minima_with_threshold(contour_x, contour_y, curvature)
         if head is None or tail is None:
-            head, tail = self.find_minima_with_midline(contour_x, contour_y, curvature, midline)
+            head, tail = self.find_minima_with_midline(contour_x, contour_y, midline)
         return head, tail
 
 
-    def extend_line_to_contour(self, start_point, direction, contour_x, contour_y, length=100):
+    def extend_line_to_contour(self, start_point, direction, contour_x, contour_y):
         contour_points = list(zip(contour_x, contour_y))
         poly = Polygon(contour_points)
+        min_x, min_y, max_x, max_y = poly.bounds
+        length = math.hypot(max_x - min_x, max_y - min_y)/10
+
+
 
         # Shapely erwartet (x, y)
         line = LineString([
             (start_point[1], start_point[0]),
-            (start_point[1] + length * direction[1], start_point[0] + length * direction[0])
+            (start_point[1] + direction[1], start_point[0] + direction[0])
+            #(start_point[1] + length * direction[1], start_point[0] + length * direction[0])
         ])
+        long_line = affinity.scale(line, xfact=length, yfact=length, origin='center')
 
-        intersection = line.intersection(poly.boundary)
+        intersection = long_line.intersection(poly.boundary)
+
+        # Plot
+        fig, ax = plt.subplots()
+        x, y = poly.exterior.xy
+        ax.plot(x, y, label='Polygon')
+
+        x, y = long_line.xy
+        ax.plot(x, y, color='orange', label='verlängerte Linie')
+
+        if not intersection.is_empty:
+            if intersection.geom_type == 'Point':
+                ax.plot(*intersection.xy, 'ro', label='Schnittpunkt')
+            elif intersection.geom_type == 'MultiPoint':
+                for pt in intersection.geoms:
+                    ax.plot(pt.x, pt.y, 'ro')
+
+        ax.set_aspect('equal')
+        ax.legend()
+        plt.show()
+
+
+
 
         if intersection.is_empty:
             return None
@@ -188,14 +225,14 @@ class FeatureExtraction:
             return None
 
     def find_minima_with_midline(self, xt, yt, midline, threshold=-20):
-        mask = np.zeros((self.gridsize, self.gridsize), dtype=np.uint8)
-
         midline = np.array(midline)
         start_point = midline[0]
         end_point = midline[-1]
 
-        start_vec = start_point - midline[1]
-        end_vec = end_point - midline[-2]
+        print(f"midline-start: {start_point}, end: {end_point}")
+
+        start_vec = start_point - midline[5]
+        end_vec = end_point - midline[-6]
 
         start_dir = start_vec / np.linalg.norm(start_vec)
         end_dir = end_vec / np.linalg.norm(end_vec)
@@ -272,7 +309,8 @@ class FeatureExtraction:
         return filled_mask
 
     def get_midline(self, mask):
-        filled_mask = morphology.remove_small_holes(mask, area_threshold=100)
+        bool_mask = mask.astype(bool)
+        filled_mask = morphology.remove_small_holes(bool_mask, area_threshold=100) # TODO replace by image generated from contour?
         skeleton = skimage.morphology.skeletonize(filled_mask)
         midline = self.skeleton_to_midline(skeleton)
         return midline
@@ -311,9 +349,14 @@ class FeatureExtraction:
         fy_der = fy.derivative()
 
         def integrand(t):
-            return float(np.sqrt(fx_der(t) ** 2 + fy_der(t) ** 2))
+            fx_value = fx_der(t) # Wert von fx_der als Skalar extrahieren
+            fy_value = fy_der(t)
+            return float(np.hypot(fx_value, fy_value))
+            #return float(np.sqrt(fx_der(t) ** 2 + fy_der(t) ** 2))
 
-        length = quad(integrand, a, b)[0]
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", IntegrationWarning)
+            length = quad(integrand, a, b)[0]
         return length
 
     def find_point_on_boundary(self, boundary, point, distance):
@@ -456,15 +499,8 @@ class FeatureExtraction:
         end_point_ml = coords_ml[-1]
 
         head, tail = endpoints
-        #if not smallest_below_neg_50_index or not smallest_remaining_index:
-        #    break
         smallest_below_neg_50 = (yt[head], xt[head])
         smallest_remaining = (yt[tail], xt[tail])
-        #print(xt)
-        #print(yt)
-        #print(head)
-        #print(tail)
-        #print(smallest_below_neg_50)
         # Calculate distances to start_point_ml
         dist_to_start_below_neg_50 = np.linalg.norm(smallest_below_neg_50 - start_point_ml)
         if isinstance(dist_to_start_below_neg_50, np.ndarray) and dist_to_start_below_neg_50.shape == (2, 1, 10000):
@@ -484,8 +520,6 @@ class FeatureExtraction:
         # Smooth the extended midline
         window_length = 5  # Must be an odd number, try different values
         polyorder = 3  # Try different values
-        print(extended_coords_ml[:, 1])
-        print(extended_coords_ml[:, 0])
 
         if len(extended_coords_ml[:, 1]) < window_length:
             return None
@@ -572,7 +606,7 @@ class FeatureExtraction:
 
         num_vertical_splits = 3  #ToDo adjust in config
 
-        cells = self.create_coordinates(midline_points,normals, max_distance, num_vertical_splits)
+        cells = self.create_coordinates(midline_points, normals, max_distance, num_vertical_splits)
 
         return cells
 
@@ -592,14 +626,24 @@ class FeatureExtraction:
         endpoints_s = dict()
         grids = dict()
         data_structures = {
-            'contours': contours,
-            'curvatures': curvatures,
-            'midlines': midlines,
-            'endpoints_s': endpoints_s,
-            'grids': grids
+            'contour': contours,
+            'curvature': curvatures,
+            'midline': midlines,
+            'endpoints': endpoints_s,
+            'grid': grids
         }
-        for name, image in images.items():  # TODO: calculate only what is desired
-            contour_x, contour_y = self.get_contour(image)
+        plots = {}
+
+        datapoints_to_plot = []
+        plot_features = self.config['tasks']['feature_extraction']['plot_features'] # TODO curvature without contour not possible
+        save_plots = self.config['tasks']['feature_extraction']['save_plots']
+        if plot_features and save_plots > 0:
+            seed = self.config['seed']
+            random.seed(seed)
+            datapoints_to_plot = random.sample(list(images.keys()), save_plots)  # ohne Wiederholung
+
+        for name, image in tqdm(images.items()):  # TODO: calculate only what is desired
+            contour_x, contour_y, padding_x, padding_y = self.get_contour(image)
 
             if contour_x is None:
                 ValueError("no contour was calculated")
@@ -623,31 +667,34 @@ class FeatureExtraction:
                 ValueError("no endpoints were calculated")
                 continue
             endpoints_s[name] = endpoints
-            self.plot(image, contour=(contour_x, contour_y), curvature=curvatures[name], midline=midlines[name],
-                      endpoints=endpoints)
-            grid = self.get_grid((contour_x, contour_y), midlines[name], endpoints, (320, 320))
+
+            if name in datapoints_to_plot:
+                self.plot(image, contour=(contour_x, contour_y), curvature=curvature, midline=midline, name=name,
+                          endpoints=endpoints, save=True, show=self.config['tasks']['feature_extraction']['show_plots'])
+
+            px = self.config['tasks']['feature_extraction']['image_size']
+            grid = self.get_grid((contour_x, contour_y), midlines[name], endpoints, (px, px))
             if grid is None:
                 ValueError("no grid was calculated")
                 continue
             else:
                 grids[name] = grid
-            return data_structures
+        return data_structures, plots
 
-    def save_data_structures(self, save_raw_features, data_structures):
-        structures_to_save = [k for k, v in save_raw_features.items() if v == 1]
-
+    def save_data_structures(self, structures_to_save, data_structures):
         for structure_name in structures_to_save:
             structure = data_structures[structure_name]
-            filename = f"{structure_name}.json"
-            foldername = "raw_data_structures"
-            self.file_handler.save_as_json_files(foldername, filename, structure)
+            folder_name = "raw_data_structures"
+            self.file_handler.save_numpy_data(folder_name, structure_name, structure)
 
-    def run(self, images, save_raw_features={}, df_features=[], save_visualisations={}, n_visualisations=4):
+    def run(self, images, save_raw_features=[]):
         # 1. first calculate all the needed data structures
-        data_structures = self.calculate_data_structures(images, save_raw_features.keys())
+        data_structures, plots = self.calculate_data_structures(images, save_raw_features)
 
-        # 1.2. save this data, where needed
+        # 1.2. save this data, where needed and make plots available
         self.save_data_structures(save_raw_features, data_structures)
+
+
 
         # 2. derive relevant features
         

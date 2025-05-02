@@ -16,10 +16,11 @@
     "feature_extraction": {
       "enabled": true,
       "save_data": ["contour", "curvature", "midline", "endpoints", "grid"],
-      "save_plots": 4,
+      "save_plots": 50,
       "plot_features": ["contour", "endpoints"],
       "image_size": 320,
-      "show_plots": false
+      "show_plots": false,
+      "num_points": 50
     },
     "classification": {
       "enabled": false,

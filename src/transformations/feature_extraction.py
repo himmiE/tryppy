@@ -2,6 +2,8 @@ import glob
 import math
 import os.path
 import random
+
+import matplotlib
 import networkx as nx
 import numpy as np
 from matplotlib import pyplot as plt
@@ -14,8 +16,10 @@ from scipy.signal import savgol_filter
 from scipy.interpolate import UnivariateSpline
 from scipy.optimize import fsolve
 from shapely import affinity
-from shapely.geometry import Polygon, LineString, Point
+from shapely.geometry import Polygon, LineString
 from skimage import measure, morphology
+from skimage.draw import polygon
+from skimage.measure import regionprops
 from tqdm import tqdm
 
 from src.file_handler import FileHandler
@@ -27,6 +31,7 @@ class FeatureExtraction:
         self.file_handler = file_handler
         self.config = config
         self.image_size = config['tasks']['feature_extraction']['image_size']
+        matplotlib.use('TkAgg')
 
     def normalize_coordinates(self, xt, yt):
         lengths = np.sqrt(np.diff(xt) ** 2 + np.diff(yt) ** 2)
@@ -42,56 +47,90 @@ class FeatureExtraction:
         result = [i % list_len for i in indices]
         return result
 
-    def plot(self, maske, contour=None, curvature=None, endpoints=None, midline=None, grid=None, show=True, save=False, name=""):
+
+
+    def plot(self, mask, contour=None, curvature=None, endpoints=None, midline=None,
+             extended_midline=None, shape=None, grid=None, show=True, save=False, name=""):
         # TODO: plot midline properly on top of the other features
         fig, ax = plt.subplots(1, 2, sharex=True, sharey=True)
         title =""
 
-        ax[0].imshow(maske.T, cmap='gray', origin='upper')
-        ax[0].set_title('Maske')
-        ax[0].grid(True)
+        ax[0].imshow(mask.T, cmap='gray', origin='upper')
+        ax[0].set_title('Mask')
         ax[0].axis('off')
+
         if contour is not None:
-            ax[1].grid(True)
-            title = "Contour"
+
+            labeled_mask = skimage.measure.label(mask)
+            props = regionprops(labeled_mask)
+            min_row, min_col, max_row, max_col = props[0].bbox
+
+            #align with mask
+            contour_x = contour[0] + min_col
+            contour_y = contour[1] + min_row
+
             if curvature is None:
-                ax[1].plot(contour[0], contour[1], color='cyan', linewidth=2, label='Contour')
+                title = "Contour"
+                ax[1].plot(contour_x, contour_y, color='cyan', linewidth=2, label='Contour')
             else:
-                ax[1].plot(contour[0], contour[1], color='cyan', linewidth=2)
-                points = np.array([contour[0], contour[1]]).T
+                title = "Curvature"
+                ax[1].plot(contour_x, contour_y, color='cyan', linewidth=2)
+                points = np.array([contour_x, contour_y]).T
                 segments = [points[i:i + 2] for i in range(len(points) - 1)]
                 lc = LineCollection(segments, cmap='viridis', linewidth=3, array=curvature,
-                                    norm=plt.Normalize(vmin=np.min(curvature), vmax=np.max(curvature)), label='Contour/Curvature')
+                                    norm=plt.Normalize(vmin=np.min(curvature), vmax=np.max(curvature)), label='Curvature')
                 ax[1].add_collection(lc)
 
-        if endpoints is not None:
+        if endpoints and contour:
             title = title + ", enpoints"
             start_idx, end_idx = endpoints
-            x_start, y_start = contour[0][start_idx], contour[1][start_idx]
-            x_end, y_end = contour[0][end_idx], contour[1][end_idx]
+            x_start, y_start = contour_x[start_idx], contour_y[start_idx]
+            x_end, y_end = contour_x[end_idx], contour_y[end_idx]
             ax[1].scatter([x_start, x_end], [y_start, y_end], color='red', marker='o', s=40, label='Endpoints')
 
         if midline is not None:
             title = title + ", midline"
-            y, x = zip(*midline)
-            ax[1].plot(y, x, color='orange', linewidth=2, label='Midline')
+            if extended_midline:
+                extended_x = extended_midline[1] + min_col
+                extended_y = extended_midline[0] + min_row
+                ax[1].plot(extended_x, extended_y, color='orange', linewidth=3, label='Extended-Midline')
+
+            x, y = zip(*midline)
+            x = np.array(x) + min_col
+            y = np.array(y) + min_row
+            ax[1].plot(x, y, color='red', linewidth=1, label='Midline')
+
+        if shape is not None:
+            distances_matrix, midline_intersection_points, _, _, all_intersections, opposite_intersections = shape
+            #plt.plot(new_points_x_ml, new_points_y_ml)
+            plt.scatter(midline_intersection_points[:, 0], midline_intersection_points[:, 1],
+                        color='red', label='Equidistant Points')
+            #plt.quiver(x_new, y_new, -normal_x, -normal_y, color='r', angles='xy', scale_units='xy', label='Normals')
+            for ix, iy in all_intersections:
+                plt.plot(ix, iy, 'bo')
+            for ix, iy in opposite_intersections:
+                plt.plot(ix, iy, 'go')
 
         if grid is not None:
             title = title + ", grid"
+            for row in grid:
+                for box in row:
+                    polygon = matplotlib.patches.Polygon(box, closed=True, edgecolor='black', facecolor='none')
+                    ax[1].add_patch(polygon)
 
-        ax[1].invert_yaxis()
 
-        #if any([contour is not None, endpoints is not None, midline is not None]):
-        #   ax[1].legend(loc='lower right', fontsize='small')
+
+        if any([contour is not None, endpoints is not None, midline is not None]):
+           ax[1].legend(loc='lower right', fontsize='small')
         ax[1].set_title(title)
-        ax[1].axis('off')
         ax[1].set_aspect('equal', 'box')
+        plt.tight_layout()
 
         if save:
             self.file_handler.save_plot("plots", name, plt)
 
         if show:
-            plt.show()
+            plt.show(block=True)
         else:
             plt.close(fig)
         return plt
@@ -119,13 +158,16 @@ class FeatureExtraction:
                 print(f"skipped contour: {e}")
 
         if best_contour is None:
-            best_contour = np.array([[0.0, 0.0], [0.0, 1.0], [1.0, 0.0]]) # TODO: find basic contour to return
+            return None, None
 
         contour = best_contour
         coeffs = spatial_efd.CalculateEFD(contour[:, 0], contour[:, 1], harmonics=20)
         xt, yt = spatial_efd.inverse_transform(coeffs, harmonic=20, n_coords=10000)
 
-        return xt, yt
+        shifted_xt = xt - np.min(xt)
+        shifted_yt = yt - np.min(yt)
+
+        return shifted_xt, shifted_yt
 
     def calculate_curvature(self, xt, yt, window_size=3, show=0):
         # Normalize the coordinates
@@ -161,7 +203,7 @@ class FeatureExtraction:
 
         return np.array(curvatures)
 
-    def find_endpoints(self, contour_x, contour_y, curvature, midline, threshold=True):
+    def find_endpoints(self, contour_x, contour_y, curvature, midline, threshold=False):
         head = None
         tail = None
         if threshold:
@@ -171,30 +213,34 @@ class FeatureExtraction:
         return head, tail
 
 
-    def extend_line_to_contour(self, start_point, direction, contour_x, contour_y):
+    def extend_line_to_contour(self, start_point, direction, contour_x, contour_y, midline):
         contour_points = list(zip(contour_x, contour_y))
         poly = Polygon(contour_points)
         min_x, min_y, max_x, max_y = poly.bounds
         length = math.hypot(max_x - min_x, max_y - min_y)/10
 
-
-
         # Shapely erwartet (x, y)
         line = LineString([
-            (start_point[1], start_point[0]),
-            (start_point[1] + direction[1], start_point[0] + direction[0])
+            (start_point[0], start_point[1]),
+            (start_point[0] + direction[0], start_point[1] + direction[1])
             #(start_point[1] + length * direction[1], start_point[0] + length * direction[0])
         ])
-        long_line = affinity.scale(line, xfact=length, yfact=length, origin='center')
+        long_line = affinity.scale(line, xfact=length, yfact=length, origin=tuple(start_point))
 
         intersection = long_line.intersection(poly.boundary)
 
         # Plot
-        fig, ax = plt.subplots()
+        '''fig, ax = plt.subplots()
         x, y = poly.exterior.xy
         ax.plot(x, y, label='Polygon')
 
+        x, y = zip(*midline)
+        x = np.array(x)
+        y = np.array(y)
+        ax.plot(x, y, color='red', linewidth=1, label='Midline')
+
         x, y = long_line.xy
+        ax.plot()
         ax.plot(x, y, color='orange', label='verlängerte Linie')
 
         if not intersection.is_empty:
@@ -206,10 +252,7 @@ class FeatureExtraction:
 
         ax.set_aspect('equal')
         ax.legend()
-        plt.show()
-
-
-
+        plt.show()'''
 
         if intersection.is_empty:
             return None
@@ -217,7 +260,7 @@ class FeatureExtraction:
         if intersection.geom_type == 'Point':
             return np.array([intersection.y, intersection.x])
         elif intersection.geom_type == 'MultiPoint':
-            points = np.array([[p.y, p.x] for p in intersection])
+            points = np.array([[p.y, p.x] for p in intersection.geoms])
             dists = np.linalg.norm(points - start_point, axis=1)
             return points[np.argmin(dists)]
         else:
@@ -229,16 +272,16 @@ class FeatureExtraction:
         start_point = midline[0]
         end_point = midline[-1]
 
-        print(f"midline-start: {start_point}, end: {end_point}")
+        #print(f"midline-start: {start_point}, end: {end_point}")
 
         start_vec = start_point - midline[5]
         end_vec = end_point - midline[-6]
 
-        start_dir = start_vec / np.linalg.norm(start_vec)
-        end_dir = end_vec / np.linalg.norm(end_vec)
+        #start_dir = start_vec / np.linalg.norm(start_vec)
+        #end_dir = end_vec / np.linalg.norm(end_vec)
 
-        extended_start = self.extend_line_to_contour(start_point, start_dir, xt, yt)
-        extended_end = self.extend_line_to_contour(end_point, end_dir, xt, yt)
+        extended_start = self.extend_line_to_contour(start_point, start_vec, xt, yt, midline)
+        extended_end = self.extend_line_to_contour(end_point, end_vec, xt, yt, midline)
 
         curvature = self.calculate_curvature(xt, yt)
         minima_indices, _ = find_peaks(-curvature)
@@ -253,10 +296,10 @@ class FeatureExtraction:
         dists_to_start = np.linalg.norm(minima_coords - extended_start, axis=1)
         dists_to_end = np.linalg.norm(minima_coords - extended_end, axis=1)
 
-        alpha = 1.0  # weight of the curvature in relation to the distance
+        alpha = 0.5  # weight of the curvature in relation to the distance
 
-        score_start = dists_to_start - alpha * filtered_values
-        score_end = dists_to_end - alpha * filtered_values
+        score_start = dists_to_start + alpha * filtered_values
+        score_end = dists_to_end + alpha * filtered_values
 
         best_start_idx = filtered_indices[np.argmin(score_start)]  # Index des besten Startpunkts
         best_end_idx = filtered_indices[np.argmin(score_end)]  # Index des besten Endpunkts
@@ -299,18 +342,17 @@ class FeatureExtraction:
 
         return min_value_below_second_threshold, smallest_remaining_index
 
-    def fill_mask(selfself, mask, max_area):
-        filled_mask = mask.copy()
-        labeled_mask, num_objects = measure.label(filled_mask, connectivity=2, return_num=True)
-        for region in measure.regionprops(labeled_mask):
-            if region.area < max_area:
-                coords = region.coords
-                filled_mask[coords[:, 0], coords[:, 1]] = 1
+    def mask_from_contour(self, contour_x, contour_y):
+        # Koordinaten in int konvertieren
+        rr, cc = polygon(contour_x, contour_y, (self.image_size, self.image_size))
+
+        # Leere Maske und Füllen
+        filled_mask = np.zeros((self.image_size, self.image_size), dtype=bool)
+        filled_mask[rr, cc] = True
         return filled_mask
 
-    def get_midline(self, mask):
-        bool_mask = mask.astype(bool)
-        filled_mask = morphology.remove_small_holes(bool_mask, area_threshold=100) # TODO replace by image generated from contour?
+    def get_midline(self, contour_x, contour_y):
+        filled_mask = self.mask_from_contour(contour_x, contour_y)
         skeleton = skimage.morphology.skeletonize(filled_mask)
         midline = self.skeleton_to_midline(skeleton)
         return midline
@@ -462,79 +504,24 @@ class FeatureExtraction:
             vertical_coordinates.append(neg_coords[::-1] + pos_coords)
 
         vc = vertical_coordinates
-        cells = [[[vc[i][j], vc[i+1][j], vc[i][j+1], vc[i+1][j+1]] for j in range(num_vertical_splits-1)] for i in range(len(vc)-1)]
-
-        # Combine the coordinates into cells
-        '''cells = []
-        for pos_coords, neg_coords in zip(vertical_coordinates_pos, vertical_coordinates_neg):
-            for i in range(len(pos_coords) - 1):  # Assuming pos_coords and neg_coords are of the same length
-                cell = [
-                    pos_coords[i],
-                    pos_coords[i + 1],
-                    neg_coords[i + 1],
-                    neg_coords[i]
-                ]
-                cells.append(cell)'''
-
-        vertices = np.array(cells).reshape(-1, 2)
-
-        # Debugging: Print out some of the cells
-        #print("Cells (First 5):", cells[:5])  # Print first 5 cells for inspection
-
+        cells = [[[vc[i][j], vc[i+1][j], vc[i+1][j+1], vc[i][j+1]]
+                  for j in range(num_vertical_splits-1)] for i in range(len(vc)-1)]
         return cells
 
-    def get_grid(self, contour, midline, endpoints, image_shape):
+    def get_shape_vector(self, contour, extended_midline):
+        #2xn featurevector with distance from boundaries on tangents of midline to the midline
+        num_points = self.config['tasks']['feature_extraction']['num_points']
 
+        smoothed_x_ml, smoothed_y_ml = extended_midline
         xt, yt = contour
-        distances = []
-
-        grid_size = 320
-        mask = np.zeros((grid_size, grid_size), dtype=np.uint8)
-        rr, cc = skimage.draw.polygon(yt, xt, image_shape)
-        mask[rr, cc] = 1
-
-        midline = np.array(midline)
-        coords_ml = midline.copy()
-        start_point_ml = coords_ml[0]
-        end_point_ml = coords_ml[-1]
-
-        head, tail = endpoints
-        smallest_below_neg_50 = (yt[head], xt[head])
-        smallest_remaining = (yt[tail], xt[tail])
-        # Calculate distances to start_point_ml
-        dist_to_start_below_neg_50 = np.linalg.norm(smallest_below_neg_50 - start_point_ml)
-        if isinstance(dist_to_start_below_neg_50, np.ndarray) and dist_to_start_below_neg_50.shape == (2, 1, 10000):
-            print(dist_to_start_below_neg_50)
-            pass
-        dist_to_start_remaining = np.linalg.norm(smallest_remaining - start_point_ml)
-        distances.append(min(dist_to_start_below_neg_50, dist_to_start_remaining))
-
-        # Determine which point is closer to start_point_ml
-        if dist_to_start_below_neg_50 < dist_to_start_remaining:
-            extended_coords_ml = np.insert(coords_ml, 0, smallest_below_neg_50, axis=0)
-            extended_coords_ml = np.append(extended_coords_ml, [smallest_remaining], axis=0)
-        else:
-            extended_coords_ml = np.insert(coords_ml, 0, smallest_remaining, axis=0)
-            extended_coords_ml = np.append(extended_coords_ml, [smallest_below_neg_50], axis=0)
-
-        # Smooth the extended midline
-        window_length = 5  # Must be an odd number, try different values
-        polyorder = 3  # Try different values
-
-        if len(extended_coords_ml[:, 1]) < window_length:
-            return None
-
-        smoothed_x_ml = savgol_filter(extended_coords_ml[:, 1], window_length, polyorder)
-        smoothed_y_ml = savgol_filter(extended_coords_ml[:, 0], window_length, polyorder)
 
         # Fit a function to the smoothed coordinates using UnivariateSpline
-        spline_x_ml = UnivariateSpline(np.arange(extended_coords_ml.shape[0]), smoothed_x_ml, s=5)
-        spline_y_ml = UnivariateSpline(np.arange(extended_coords_ml.shape[0]), smoothed_y_ml, s=5)
-        new_points_x_ml = spline_x_ml(np.linspace(0, len(extended_coords_ml) - 1, 1000))
-        new_points_y_ml = spline_y_ml(np.linspace(0, len(extended_coords_ml) - 1, 1000))
+        spline_x_ml = UnivariateSpline(np.arange(smoothed_x_ml.shape[0]), smoothed_x_ml, s=5)
+        spline_y_ml = UnivariateSpline(np.arange(smoothed_y_ml.shape[0]), smoothed_y_ml, s=5)
+        #new_points_x_ml = spline_x_ml(np.linspace(0, len(smoothed_x_ml) - 1, 1000))
+        #new_points_y_ml = spline_y_ml(np.linspace(0, len(smoothed_y_ml) - 1, 1000))
 
-        total_length = self.arc_length(spline_x_ml, spline_y_ml, 0, len(extended_coords_ml) - 1)
-        num_points = 50
+        total_length = self.arc_length(spline_x_ml, spline_y_ml, 0, len(smoothed_x_ml) - 1)
         arc_lengths = np.linspace(0, total_length, num=num_points)
 
         # Find the t values that correspond to these equidistant arc lengths
@@ -550,6 +537,7 @@ class FeatureExtraction:
         # Sample the splines at these t values
         x_new = spline_x_ml(t_new)
         y_new = spline_y_ml(t_new)
+        midline_intersection_points = np.array([x_new, y_new]).T
 
         neighborhood_size = 5
 
@@ -583,16 +571,18 @@ class FeatureExtraction:
         # Convert list of normals to a numpy array for easier handling
         normal_x = np.array(normals_x)
         normal_y = np.array(normals_y)
+        normals = np.array([normal_x, normal_y]).T
 
         # Compute the first intersection for each normal vector in both directions
-        all_intersections, distances = self.compute_intersections_and_distances(x_new, y_new, normal_x, normal_y, xt, yt,
-                                                                           1)
+        all_intersections, distances = self.compute_intersections_and_distances(x_new, y_new, normal_x, normal_y, xt,
+                                                                                yt,
+                                                                                1)
         opposite_intersections, opposite_distances = self.compute_intersections_and_distances(x_new, y_new, normal_x,
-                                                                                         normal_y, xt, yt, -1)
+                                                                                              normal_y, xt, yt, -1)
 
-        intersection_matrix = np.concatenate(
+        '''intersection_matrix = np.concatenate(
             (np.expand_dims(np.array(all_intersections), 0), np.expand_dims(np.array(opposite_intersections), 0)),
-            0)
+            0)'''
         distances_matrix = np.concatenate(
             (np.expand_dims(np.array(distances), 0), np.expand_dims(np.array(opposite_distances), 0)), 0)
 
@@ -601,23 +591,13 @@ class FeatureExtraction:
         if max_distance > 0:
             distances_matrix = distances_matrix / max_distance
 
-        midline_points = np.array([x_new, y_new]).T  # Assuming x_new and y_new are 1D arrays of the same length
-        normals = np.array([normal_x, normal_y]).T  # Assuming normal_x and normal_y are 1D arrays of the same length
+        return distances_matrix, midline_intersection_points, normals, max_distance, all_intersections, opposite_intersections
 
-        num_vertical_splits = 3  #ToDo adjust in config
-
-        cells = self.create_coordinates(midline_points, normals, max_distance, num_vertical_splits)
+    def get_grid(self, shape_vector, num_vertical_splits=3):
+        distances_matrix, midline_intersection_points, normals, max_distance, _, _ = shape_vector
+        cells = self.create_coordinates(midline_intersection_points, normals, max_distance, num_vertical_splits)
 
         return cells
-
-    def get_src_images(self, source_image_directory):
-        if os.path.isdir(source_image_directory):
-            image_filename_structure = f'{source_image_directory}/*.png'
-            all_files = glob.glob(image_filename_structure)
-            return all_files
-        else:
-            # Todo Throw exception
-            pass
 
     def calculate_data_structures(self, images, features):
         contours = dict()
@@ -640,10 +620,13 @@ class FeatureExtraction:
         if plot_features and save_plots > 0:
             seed = self.config['seed']
             random.seed(seed)
-            datapoints_to_plot = random.sample(list(images.keys()), save_plots)  # ohne Wiederholung
+            datapoints_to_plot = random.sample(list(images.keys()), min(save_plots, len(images.keys())))
 
         for name, image in tqdm(images.items()):  # TODO: calculate only what is desired
-            contour_x, contour_y, padding_x, padding_y = self.get_contour(image)
+            contour = self.get_contour(image)
+            contour_x, contour_y = contour
+
+            #self.plot(image, show=True)
 
             if contour_x is None:
                 ValueError("no contour was calculated")
@@ -656,7 +639,7 @@ class FeatureExtraction:
                 continue
             curvatures[name] = curvature
 
-            midline = self.get_midline(image)
+            midline = self.get_midline(contour_x, contour_y)
             if midline is None:
                 ValueError("no midline was calculated")
                 continue
@@ -668,28 +651,39 @@ class FeatureExtraction:
                 continue
             endpoints_s[name] = endpoints
 
+            endpoint_coords = ((contour_x[endpoints[0]], contour_y[endpoints[0]]),
+                               (contour_x[endpoints[1]], contour_y[endpoints[1]]))
+
+            extended_midline, new_points, total_length = self.extend_midline(midline, endpoint_coords)
+
+            shape_vector_results = self.get_shape_vector(contour, extended_midline)
+            shape_vector = shape_vector_results[0]
+
             if name in datapoints_to_plot:
                 self.plot(image, contour=(contour_x, contour_y), curvature=curvature, midline=midline, name=name,
-                          endpoints=endpoints, save=True, show=self.config['tasks']['feature_extraction']['show_plots'])
+                          endpoints=endpoints, extended_midline=extended_midline, shape=shape_vector_results,
+                          save=True, show=self.config['tasks']['feature_extraction']['show_plots'])
 
             px = self.config['tasks']['feature_extraction']['image_size']
-            grid = self.get_grid((contour_x, contour_y), midlines[name], endpoints, (px, px))
+            grid = self.get_grid(shape_vector_results)
+            #midline_intersection_points, normals, max_distance
             if grid is None:
                 ValueError("no grid was calculated")
                 continue
             else:
                 grids[name] = grid
-        return data_structures, plots
+
+        return data_structures
 
     def save_data_structures(self, structures_to_save, data_structures):
         for structure_name in structures_to_save:
             structure = data_structures[structure_name]
-            folder_name = "raw_data_structures"
+            folder_name = structure_name
             self.file_handler.save_numpy_data(folder_name, structure_name, structure)
 
     def run(self, images, save_raw_features=[]):
         # 1. first calculate all the needed data structures
-        data_structures, plots = self.calculate_data_structures(images, save_raw_features)
+        data_structures = self.calculate_data_structures(images, save_raw_features)
 
         # 1.2. save this data, where needed and make plots available
         self.save_data_structures(save_raw_features, data_structures)
@@ -697,11 +691,44 @@ class FeatureExtraction:
 
 
         # 2. derive relevant features
-        
-
-
-
-
-
         # 2. from these datastructures derive wanted features
+
+    def extend_midline(self, midline, endpoints):
+
+        start_point = np.array(endpoints[0])
+        end_point = np.array(endpoints[-1])
+
+        start_midline = np.array(midline[0])
+        end_midline = np.array(midline[-1])
+
+        option_1 = np.linalg.norm(start_point - start_midline) + np.linalg.norm(end_point - end_midline) # names alligned
+        option_2 = np.linalg.norm(start_point - end_midline) + np.linalg.norm(end_point - start_midline) # names misalligned
+
+        if option_1 <= option_2: #
+            extended_coords_ml = np.insert(midline, 0, start_point, axis=0)
+            extended_coords_ml = np.append(extended_coords_ml, [end_point], axis=0)
+        else:
+            extended_coords_ml = np.insert(midline, 0, end_point, axis=0)
+            extended_coords_ml = np.append(extended_coords_ml, [start_point], axis=0)
+
+        # Smooth the extended midline
+        window_length = 11  # Must be an odd number, try different values
+        polyorder = 3  # Try different values
+        smoothed_x_ml = savgol_filter(extended_coords_ml[:, 1], window_length, polyorder)
+        smoothed_y_ml = savgol_filter(extended_coords_ml[:, 0], window_length, polyorder)
+
+        # Fit a function to the smoothed coordinates using UnivariateSpline
+        spline_x_ml = UnivariateSpline(np.arange(extended_coords_ml.shape[0]), smoothed_x_ml, s=3)
+        spline_y_ml = UnivariateSpline(np.arange(extended_coords_ml.shape[0]), smoothed_y_ml, s=3)
+        new_points_x_ml = spline_x_ml(np.linspace(0, len(extended_coords_ml) - 1, 1000))
+        new_points_y_ml = spline_y_ml(np.linspace(0, len(extended_coords_ml) - 1, 1000))
+
+        total_length = self.arc_length(spline_x_ml, spline_y_ml, 0, len(extended_coords_ml) - 1)
+
+        return (smoothed_x_ml, smoothed_y_ml), (new_points_x_ml, new_points_y_ml), total_length
+
+
+
+
+
 

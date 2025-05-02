@@ -35,6 +35,8 @@ class FileHandler:
                 image_file.close()
                 image_data = self.pre_process_tiff_file(image_data)
                 input_images[image_key] = image_data'''
+        keys_to_extract = ['test_images_TP_1', 'test_images_TP_2', 'test_images_TP_3']
+        input_images = {k: input_images[k] for k in keys_to_extract if k in input_images}
         return input_images
 
     def pre_process_tiff_file(self, image):
@@ -74,11 +76,12 @@ class FileHandler:
         file = open(file_path, "w")
         json.dump(data, file)
 
-    def save_numpy_data(self, folder_name, filename, data):
-        folder_path = self.data_dir / folder_name
+    def save_numpy_data(self, folder_name, filename, data_dict):
+        folder_path = self.data_dir / "raw_data_structures" / folder_name
         os.makedirs(folder_path, exist_ok=True)
-        file_path = self.data_dir / folder_name / filename
-        np.save(file_path, data)
+        for file_name in data_dict:
+            file_path = folder_path / filename
+            np.save(file_path, data_dict[file_name])
 
     def save_feature_data(self, feature, param):
         if feature == "contour":

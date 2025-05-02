@@ -35,7 +35,7 @@ class FileHandler:
                 image_file.close()
                 image_data = self.pre_process_tiff_file(image_data)
                 input_images[image_key] = image_data'''
-        keys_to_extract = ['test_images_TP_1', 'test_images_TP_2', 'test_images_TP_3']
+        keys_to_extract = ['1_0', '1_1', '1_2']
         input_images = {k: input_images[k] for k in keys_to_extract if k in input_images}
         return input_images
 

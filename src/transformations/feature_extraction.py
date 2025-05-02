@@ -51,7 +51,7 @@ class FeatureExtraction:
 
     def plot(self, mask, contour=None, curvature=None, endpoints=None, midline=None,
              extended_midline=None, shape=None, grid=None, show=True, save=False, name=""):
-        # TODO: plot midline properly on top of the other features
+        to_plot = self.config['tasks']['feature_extraction']['to_plot']
         fig, ax = plt.subplots(1, 2, sharex=True, sharey=True)
         title =""
 
@@ -59,17 +59,17 @@ class FeatureExtraction:
         ax[0].set_title('Mask')
         ax[0].axis('off')
 
-        if contour is not None:
+        labeled_mask = skimage.measure.label(mask)
+        props = regionprops(labeled_mask)
+        min_row, min_col, max_row, max_col = props[0].bbox
 
-            labeled_mask = skimage.measure.label(mask)
-            props = regionprops(labeled_mask)
-            min_row, min_col, max_row, max_col = props[0].bbox
+        if 'contour' in to_plot and contour is not None:
 
             #align with mask
             contour_x = contour[0] + min_col
             contour_y = contour[1] + min_row
 
-            if curvature is None:
+            if 'curvature' in to_plot and curvature is None:
                 title = "Contour"
                 ax[1].plot(contour_x, contour_y, color='cyan', linewidth=2, label='Contour')
             else:
@@ -81,14 +81,14 @@ class FeatureExtraction:
                                     norm=plt.Normalize(vmin=np.min(curvature), vmax=np.max(curvature)), label='Curvature')
                 ax[1].add_collection(lc)
 
-        if endpoints and contour:
+        if 'endpoints' in to_plot and endpoints and contour:
             title = title + ", enpoints"
             start_idx, end_idx = endpoints
             x_start, y_start = contour_x[start_idx], contour_y[start_idx]
             x_end, y_end = contour_x[end_idx], contour_y[end_idx]
-            ax[1].scatter([x_start, x_end], [y_start, y_end], color='red', marker='o', s=40, label='Endpoints')
+            ax[1].scatter([x_start, x_end], [y_start, y_end], color='red', marker='o', s=30, label='Endpoints')
 
-        if midline is not None:
+        if 'midline' in to_plot and midline is not None:
             title = title + ", midline"
             if extended_midline:
                 extended_x = extended_midline[1] + min_col
@@ -100,18 +100,18 @@ class FeatureExtraction:
             y = np.array(y) + min_row
             ax[1].plot(x, y, color='red', linewidth=1, label='Midline')
 
-        if shape is not None:
+        if 'shape' in to_plot and shape is not None:
             distances_matrix, midline_intersection_points, _, _, all_intersections, opposite_intersections = shape
             #plt.plot(new_points_x_ml, new_points_y_ml)
-            plt.scatter(midline_intersection_points[:, 0], midline_intersection_points[:, 1],
-                        color='red', label='Equidistant Points')
+            plt.scatter(midline_intersection_points[:, 1]+min_col, midline_intersection_points[:, 0]+min_row,
+                        color='red', label='Equidistant Points', s=5)
             #plt.quiver(x_new, y_new, -normal_x, -normal_y, color='r', angles='xy', scale_units='xy', label='Normals')
             for ix, iy in all_intersections:
-                plt.plot(ix, iy, 'bo')
+                plt.plot(ix+min_col, iy+ min_row, 'bo', ms=4)
             for ix, iy in opposite_intersections:
-                plt.plot(ix, iy, 'go')
+                plt.plot(ix+min_col, iy+ min_row, 'go', ms=4)
 
-        if grid is not None:
+        if 'grid' in to_plot and grid is not None:
             title = title + ", grid"
             for row in grid:
                 for box in row:
@@ -326,6 +326,8 @@ class FeatureExtraction:
             min_value_below_second_threshold = second_threshold_indices[np.argmin(second_threshold_values)]
 
         def is_far_enough(idx1, idx2, threshold):
+            print(len(xt))
+            print(len(curvature))
             distance_forward = (idx2 - idx1) % len(xt)
             distance_backward = (idx1 - idx2) % len(xt)
             smaller_distance = min(distance_backward, distance_forward)
@@ -512,7 +514,7 @@ class FeatureExtraction:
         #2xn featurevector with distance from boundaries on tangents of midline to the midline
         num_points = self.config['tasks']['feature_extraction']['num_points']
 
-        smoothed_x_ml, smoothed_y_ml = extended_midline
+        smoothed_y_ml, smoothed_x_ml = extended_midline
         xt, yt = contour
 
         # Fit a function to the smoothed coordinates using UnivariateSpline
@@ -537,9 +539,8 @@ class FeatureExtraction:
         # Sample the splines at these t values
         x_new = spline_x_ml(t_new)
         y_new = spline_y_ml(t_new)
-        midline_intersection_points = np.array([x_new, y_new]).T
-
-        neighborhood_size = 5
+        midline_intersection_points = np.array([y_new, x_new]).T
+        neighborhood_size = 10
 
         normals_x = []
         normals_y = []
@@ -567,6 +568,18 @@ class FeatureExtraction:
 
             normals_x.append(normal_x)
             normals_y.append(normal_y)
+
+            # contour
+            '''plt.plot(xt, yt, color='blue', linewidth=2)
+            plt.axis('equal')  # optional, um die Achsen gleichmäßig zu skalieren
+            # midline-points
+            plt.scatter(x_new, y_new, color='red', label='Equidistant Points', s=5)
+            # tangents
+            plt.quiver(x_new[i], y_new[i], avg_tangent_x, avg_tangent_y,
+                       angles='xy', scale_units='xy', scale=0.1, color='red')
+            plt.quiver(x_new[i], y_new[i], normal_x, normal_y,
+                       angles='xy', scale_units='xy', scale=0.1, color='green')
+            plt.show()'''
 
         # Convert list of normals to a numpy array for easier handling
         normal_x = np.array(normals_x)
@@ -612,10 +625,9 @@ class FeatureExtraction:
             'endpoints': endpoints_s,
             'grid': grids
         }
-        plots = {}
 
         datapoints_to_plot = []
-        plot_features = self.config['tasks']['feature_extraction']['plot_features'] # TODO curvature without contour not possible
+        plot_features = self.config['tasks']['feature_extraction']['to_plot'] # TODO curvature without contour not possible
         save_plots = self.config['tasks']['feature_extraction']['save_plots']
         if plot_features and save_plots > 0:
             seed = self.config['seed']
@@ -659,11 +671,6 @@ class FeatureExtraction:
             shape_vector_results = self.get_shape_vector(contour, extended_midline)
             shape_vector = shape_vector_results[0]
 
-            if name in datapoints_to_plot:
-                self.plot(image, contour=(contour_x, contour_y), curvature=curvature, midline=midline, name=name,
-                          endpoints=endpoints, extended_midline=extended_midline, shape=shape_vector_results,
-                          save=True, show=self.config['tasks']['feature_extraction']['show_plots'])
-
             px = self.config['tasks']['feature_extraction']['image_size']
             grid = self.get_grid(shape_vector_results)
             #midline_intersection_points, normals, max_distance
@@ -672,6 +679,10 @@ class FeatureExtraction:
                 continue
             else:
                 grids[name] = grid
+            if name in datapoints_to_plot:
+                self.plot(image, contour=(contour_x, contour_y), curvature=curvature, midline=midline, name=name,
+                          endpoints=endpoints, extended_midline=extended_midline, shape=shape_vector_results,
+                          save=True, show=self.config['tasks']['feature_extraction']['show_plots'])
 
         return data_structures
 

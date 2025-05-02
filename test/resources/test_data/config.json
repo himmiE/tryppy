@@ -17,7 +17,7 @@
       "enabled": true,
       "save_data": ["contour", "curvature", "midline", "endpoints", "grid"],
       "save_plots": 50,
-      "plot_features": ["contour", "endpoints"],
+      "to_plot": ["grid"],
       "image_size": 320,
       "show_plots": false,
       "num_points": 50

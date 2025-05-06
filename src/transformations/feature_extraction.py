@@ -15,7 +15,7 @@ import warnings
 from scipy.signal import savgol_filter
 from scipy.interpolate import UnivariateSpline
 from scipy.optimize import fsolve
-from shapely import affinity
+from shapely import affinity, Point
 from shapely.geometry import Polygon, LineString
 from skimage import measure, morphology
 from skimage.draw import polygon
@@ -54,14 +54,17 @@ class FeatureExtraction:
         to_plot = self.config['tasks']['feature_extraction']['to_plot']
         fig, ax = plt.subplots(1, 2, sharex=True, sharey=True)
         title =""
+        min_col = 0
+        min_row = 0
 
-        ax[0].imshow(mask.T, cmap='gray', origin='upper')
-        ax[0].set_title('Mask')
-        ax[0].axis('off')
+        if "mask" in to_plot:
+            ax[0].imshow(mask.T, cmap='gray', origin='upper')
+            ax[0].set_title('Mask')
+            ax[0].axis('off')
 
-        labeled_mask = skimage.measure.label(mask)
-        props = regionprops(labeled_mask)
-        min_row, min_col, max_row, max_col = props[0].bbox
+            labeled_mask = skimage.measure.label(mask)
+            props = regionprops(labeled_mask)
+            min_row, min_col, max_row, max_col = props[0].bbox
 
         if 'contour' in to_plot and contour is not None:
 
@@ -101,30 +104,48 @@ class FeatureExtraction:
             ax[1].plot(x, y, color='red', linewidth=1, label='Midline')
 
         if 'shape' in to_plot and shape is not None:
-            distances_matrix, midline_intersection_points, _, _, all_intersections, opposite_intersections = shape
-            #plt.plot(new_points_x_ml, new_points_y_ml)
-            plt.scatter(midline_intersection_points[:, 1]+min_col, midline_intersection_points[:, 0]+min_row,
-                        color='red', label='Equidistant Points', s=5)
-            #plt.quiver(x_new, y_new, -normal_x, -normal_y, color='r', angles='xy', scale_units='xy', label='Normals')
-            for ix, iy in all_intersections:
-                plt.plot(ix+min_col, iy+ min_row, 'bo', ms=4)
-            for ix, iy in opposite_intersections:
-                plt.plot(ix+min_col, iy+ min_row, 'go', ms=4)
+            title = title + ", shape"
+            distances_matrix, midline_intersection_points, normals, max_distance, all_intersections, opposite_intersections = shape
+            # Plot der Normalen mit skalierter Länge je nach Abstand
+            for i in range(len(normals)):
+                midline_x = midline_intersection_points[:, 1] + min_col
+                midline_y = midline_intersection_points[:, 0] + min_row
+                x0, y0 = midline_x[i], midline_y[i]
+                nx, ny = normals[i]
+
+                # Holen der Distanz aus distances_matrix (positive Richtung)
+                distance = distances_matrix[0, i]
+
+                # Normalenlänge skalieren
+                # Skalierung: max_distance als max. Länge der Normalen (optional anpassen)
+                normal_length = distance * max_distance  # Hier mit max_distance multiplizieren, um die Länge zu justieren
+
+                # Normale zeichnen, skalierte Länge
+                ax[1].plot([x0, x0 + nx * normal_length], [y0, y0 + ny * normal_length], 'b--', alpha=0.5)
+
+            # Plot der Schnittpunkte in der positiven Richtung (grün)
+            all_intersections_x = [p[0] + min_col for p in all_intersections if not np.isnan(p[0])]
+            all_intersections_y = [p[1] + min_row for p in all_intersections if not np.isnan(p[1])]
+            ax[1].scatter(all_intersections_x, all_intersections_y, color='g', label="Schnittpunkte (positiv)", zorder=5)
+
+            # Plot der Schnittpunkte in der negativen Richtung (orange)
+            opposite_intersections_x = [p[0] + min_col for p in opposite_intersections if not np.isnan(p[0])]
+            opposite_intersections_y = [p[1] + min_row for p in opposite_intersections if not np.isnan(p[1])]
+            ax[1].scatter(opposite_intersections_x, opposite_intersections_y, color='orange',
+                        label="Schnittpunkte (negativ)", zorder=5)
 
         if 'grid' in to_plot and grid is not None:
             title = title + ", grid"
-            for row in grid:
-                for box in row:
-                    polygon = matplotlib.patches.Polygon(box, closed=True, edgecolor='black', facecolor='none')
-                    ax[1].add_patch(polygon)
 
+            # Vierecke plotten
+            self.plot_quadrilaterals(ax[1], grid, min_col, min_row)
 
-
-        if any([contour is not None, endpoints is not None, midline is not None]):
-           ax[1].legend(loc='lower right', fontsize='small')
         ax[1].set_title(title)
         ax[1].set_aspect('equal', 'box')
         plt.tight_layout()
+
+        if any([contour is not None, endpoints is not None, midline is not None]):
+            ax[1].legend(loc='lower right', fontsize='small')
 
         if save:
             self.file_handler.save_plot("plots", name, plt)
@@ -135,6 +156,23 @@ class FeatureExtraction:
             plt.close(fig)
         return plt
 
+    def plot_quadrilaterals(self, ax, quadrilaterals, dx=0, dy=0):
+        for quad in quadrilaterals:
+            shifted = np.array(quad) + np.array([dx, dy])
+            patch = matplotlib.patches.Polygon(shifted, closed=True, facecolor='cyan', edgecolor='black', alpha=0.3)
+            ax.add_patch(patch)
+
+    def sort_corners_clockwise(self, pts):
+        """
+        Sortiert 4 Punkte im Uhrzeigersinn um ihren Schwerpunkt.
+        :param pts: Liste oder Array von 4 (x, y)-Punkten
+        :return: sortiertes Array von Punkten
+        """
+        pts = np.array(pts)
+        centroid = np.mean(pts, axis=0)  # Schwerpunkt
+        angles = np.arctan2(pts[:, 1] - centroid[1], pts[:, 0] - centroid[0])
+        sorted_indices = np.argsort(angles)
+        return pts[sorted_indices]
 
     def get_contour(self, image):
         image = skimage.morphology.area_closing(image, 10)
@@ -229,31 +267,6 @@ class FeatureExtraction:
 
         intersection = long_line.intersection(poly.boundary)
 
-        # Plot
-        '''fig, ax = plt.subplots()
-        x, y = poly.exterior.xy
-        ax.plot(x, y, label='Polygon')
-
-        x, y = zip(*midline)
-        x = np.array(x)
-        y = np.array(y)
-        ax.plot(x, y, color='red', linewidth=1, label='Midline')
-
-        x, y = long_line.xy
-        ax.plot()
-        ax.plot(x, y, color='orange', label='verlängerte Linie')
-
-        if not intersection.is_empty:
-            if intersection.geom_type == 'Point':
-                ax.plot(*intersection.xy, 'ro', label='Schnittpunkt')
-            elif intersection.geom_type == 'MultiPoint':
-                for pt in intersection.geoms:
-                    ax.plot(pt.x, pt.y, 'ro')
-
-        ax.set_aspect('equal')
-        ax.legend()
-        plt.show()'''
-
         if intersection.is_empty:
             return None
 
@@ -272,13 +285,8 @@ class FeatureExtraction:
         start_point = midline[0]
         end_point = midline[-1]
 
-        #print(f"midline-start: {start_point}, end: {end_point}")
-
         start_vec = start_point - midline[5]
         end_vec = end_point - midline[-6]
-
-        #start_dir = start_vec / np.linalg.norm(start_vec)
-        #end_dir = end_vec / np.linalg.norm(end_vec)
 
         extended_start = self.extend_line_to_contour(start_point, start_vec, xt, yt, midline)
         extended_end = self.extend_line_to_contour(end_point, end_vec, xt, yt, midline)
@@ -396,7 +404,6 @@ class FeatureExtraction:
             fx_value = fx_der(t) # Wert von fx_der als Skalar extrahieren
             fy_value = fy_der(t)
             return float(np.hypot(fx_value, fy_value))
-            #return float(np.sqrt(fx_der(t) ** 2 + fy_der(t) ** 2))
 
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", IntegrationWarning)
@@ -427,52 +434,49 @@ class FeatureExtraction:
         return closest_point  # Return the closest point if no exact match is found
 
     # Generic function to find the first intersection based on direction
-    def find_first_intersection(self, normal_x, normal_y, x0, y0, boundary_x, boundary_y, direction):
-        closest_intersection = None
-        min_distance = float('inf')
+    def find_first_intersection(self, normal_x, normal_y, x0, y0, boundary_x, boundary_y, direction, ray_length=1000):
+        # Richtungsvektor skalieren
+        dx = direction * normal_x
+        dy = direction * normal_y
 
-        for i in range(len(boundary_x) - 1): # why not the last point?
-            x1, y1 = boundary_x[i], boundary_y[i]
-            x2, y2 = boundary_x[i + 1], boundary_y[i + 1]
+        # Strahl definieren
+        start = (x0, y0)
+        end = (x0 + dx * ray_length, y0 + dy * ray_length)
+        ray = LineString([start, end])
 
-            # Line equation for the boundary segment
-            a1 = y2 - y1
-            b1 = x1 - x2
-            c1 = a1 * x1 + b1 * y1
+        # Kontur als LineString
+        boundary = LineString(zip(boundary_x, boundary_y))
 
-            # Line equation for the normal
-            a2 = normal_y
-            b2 = -normal_x
-            c2 = a2 * x0 + b2 * y0
+        # Schnittpunkt berechnen
+        inter = ray.intersection(boundary)
 
-            # Determinant
-            det = a1 * b2 - a2 * b1
+        if inter.is_empty:
+            return None
 
-            if abs(det) < 1e-10:
-                continue  # Lines are parallel, no intersection
+        # Mehrere Schnittpunkte → nimm den nächsten
+        if inter.geom_type == 'MultiPoint':
+            points = list(inter.geoms)
+            points.sort(key=lambda pt: Point(start).distance(pt))
+            closest = points[0]
+            return closest.x, closest.y
 
-            # Intersection coordinates
-            ix = (b2 * c1 - b1 * c2) / det
-            iy = (a1 * c2 - a2 * c1) / det
+        elif inter.geom_type == 'Point':
+            return inter.x, inter.y
 
-            # Check if intersection is within the boundary segment
-            if min(x1, x2) <= ix <= max(x1, x2) and min(y1, y2) <= iy <= max(y1, y2):
-                # Check the direction of the intersection with respect to the normal
-                if direction * ((ix - x0) * normal_x + (iy - y0) * normal_y) > 0:
-                    distance = np.sqrt((ix - x0) ** 2 + (iy - y0) ** 2)
-                    if distance < min_distance:
-                        min_distance = distance
-                        closest_intersection = (ix, iy)
-
-        return closest_intersection
+        # Sonst kein gültiger Schnittpunkt
+        return None
 
     # Function to compute intersections and distances
     def compute_intersections_and_distances(self, x_new, y_new, normal_x, normal_y, boundary_x, boundary_y, direction):
         intersections = []
         distances = []
+
         for i in range(len(x_new)):
+            dx = direction * normal_x[i]
+            dy = direction * normal_y[i]
             intersection = self.find_first_intersection(normal_x[i], normal_y[i], x_new[i], y_new[i], boundary_x, boundary_y,
                                                    direction)
+
             if intersection:
                 intersections.append(intersection)
                 distance = np.sqrt((intersection[0] - x_new[i]) ** 2 + (intersection[1] - y_new[i]) ** 2)
@@ -488,7 +492,7 @@ class FeatureExtraction:
 
         for i, midline_point in enumerate(midline_points):
             normal = normals[i]
-            curr_point = midline_point
+            curr_point = midline_point[::-1]
             pos_coords = [curr_point]
             neg_coords = []
 
@@ -497,17 +501,16 @@ class FeatureExtraction:
                 pos_coords.append(next_point_pos)
                 curr_point = next_point_pos
 
-            curr_point = midline_point
+            curr_point = midline_point[::-1]
             for j in range(num_vertical_splits):
                 next_point_neg = curr_point - normal * vertical_distance
                 neg_coords.append(next_point_neg)
                 curr_point = next_point_neg
 
-            vertical_coordinates.append(neg_coords[::-1] + pos_coords)
-
+            vertical_coordinates.append(neg_coords + pos_coords)
         vc = vertical_coordinates
-        cells = [[[vc[i][j], vc[i+1][j], vc[i+1][j+1], vc[i][j+1]]
-                  for j in range(num_vertical_splits-1)] for i in range(len(vc)-1)]
+        cells = [self.sort_corners_clockwise([vc[i][j], vc[i + 1][j], vc[i + 1][j + 1], vc[i][j + 1]])
+                 for j in range(num_vertical_splits * 2) for i in range(len(vc) - 1)]
         return cells
 
     def get_shape_vector(self, contour, extended_midline):
@@ -520,8 +523,6 @@ class FeatureExtraction:
         # Fit a function to the smoothed coordinates using UnivariateSpline
         spline_x_ml = UnivariateSpline(np.arange(smoothed_x_ml.shape[0]), smoothed_x_ml, s=5)
         spline_y_ml = UnivariateSpline(np.arange(smoothed_y_ml.shape[0]), smoothed_y_ml, s=5)
-        #new_points_x_ml = spline_x_ml(np.linspace(0, len(smoothed_x_ml) - 1, 1000))
-        #new_points_y_ml = spline_y_ml(np.linspace(0, len(smoothed_y_ml) - 1, 1000))
 
         total_length = self.arc_length(spline_x_ml, spline_y_ml, 0, len(smoothed_x_ml) - 1)
         arc_lengths = np.linspace(0, total_length, num=num_points)
@@ -540,10 +541,13 @@ class FeatureExtraction:
         x_new = spline_x_ml(t_new)
         y_new = spline_y_ml(t_new)
         midline_intersection_points = np.array([y_new, x_new]).T
-        neighborhood_size = 10
+        neighborhood_size = 5
 
         normals_x = []
         normals_y = []
+
+        tangents_x = []
+        tangents_y = []
 
         for i in range(len(t_new)):
             # Make sure to handle boundaries correctly
@@ -557,6 +561,9 @@ class FeatureExtraction:
             avg_dx = np.mean(dx_neighborhood)
             avg_dy = np.mean(dy_neighborhood)
 
+            tangents_x.append(avg_dx)
+            tangents_y.append(avg_dy)
+
             # Normalize the averaged tangent vector
             avg_tangent_magnitude = np.sqrt(avg_dx ** 2 + avg_dy ** 2)
             avg_tangent_x = avg_dx / avg_tangent_magnitude
@@ -569,18 +576,6 @@ class FeatureExtraction:
             normals_x.append(normal_x)
             normals_y.append(normal_y)
 
-            # contour
-            '''plt.plot(xt, yt, color='blue', linewidth=2)
-            plt.axis('equal')  # optional, um die Achsen gleichmäßig zu skalieren
-            # midline-points
-            plt.scatter(x_new, y_new, color='red', label='Equidistant Points', s=5)
-            # tangents
-            plt.quiver(x_new[i], y_new[i], avg_tangent_x, avg_tangent_y,
-                       angles='xy', scale_units='xy', scale=0.1, color='red')
-            plt.quiver(x_new[i], y_new[i], normal_x, normal_y,
-                       angles='xy', scale_units='xy', scale=0.1, color='green')
-            plt.show()'''
-
         # Convert list of normals to a numpy array for easier handling
         normal_x = np.array(normals_x)
         normal_y = np.array(normals_y)
@@ -588,14 +583,10 @@ class FeatureExtraction:
 
         # Compute the first intersection for each normal vector in both directions
         all_intersections, distances = self.compute_intersections_and_distances(x_new, y_new, normal_x, normal_y, xt,
-                                                                                yt,
-                                                                                1)
+                                                                                yt, 1)
         opposite_intersections, opposite_distances = self.compute_intersections_and_distances(x_new, y_new, normal_x,
                                                                                               normal_y, xt, yt, -1)
 
-        '''intersection_matrix = np.concatenate(
-            (np.expand_dims(np.array(all_intersections), 0), np.expand_dims(np.array(opposite_intersections), 0)),
-            0)'''
         distances_matrix = np.concatenate(
             (np.expand_dims(np.array(distances), 0), np.expand_dims(np.array(opposite_distances), 0)), 0)
 
@@ -681,7 +672,7 @@ class FeatureExtraction:
                 grids[name] = grid
             if name in datapoints_to_plot:
                 self.plot(image, contour=(contour_x, contour_y), curvature=curvature, midline=midline, name=name,
-                          endpoints=endpoints, extended_midline=extended_midline, shape=shape_vector_results,
+                          endpoints=endpoints, extended_midline=extended_midline, shape=shape_vector_results, grid=grid,
                           save=True, show=self.config['tasks']['feature_extraction']['show_plots'])
 
         return data_structures

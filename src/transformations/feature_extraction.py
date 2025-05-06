@@ -22,7 +22,7 @@ from skimage.draw import polygon
 from skimage.measure import regionprops
 from tqdm import tqdm
 
-from src.file_handler import FileHandler
+from rasterio.features import rasterize
 from spatial_efd import spatial_efd
 
 
@@ -138,7 +138,7 @@ class FeatureExtraction:
             title = title + ", grid"
 
             # Vierecke plotten
-            self.plot_quadrilaterals(ax[1], grid, min_col, min_row)
+            self.plot_quadrilaterals(ax[1], grid[0], min_col, min_row)
 
         ax[1].set_title(title)
         ax[1].set_aspect('equal', 'box')
@@ -597,9 +597,10 @@ class FeatureExtraction:
 
         return distances_matrix, midline_intersection_points, normals, max_distance, all_intersections, opposite_intersections
 
-    def get_grid(self, shape_vector, num_vertical_splits=3):
+    def get_grid(self, shape_vector, orig_image, num_vertical_splits=3):
         distances_matrix, midline_intersection_points, normals, max_distance, _, _ = shape_vector
         cells = self.create_coordinates(midline_intersection_points, normals, max_distance, num_vertical_splits)
+        intensities = self.batch_weighted_intensities(orig_image, cells)
 
         return cells
 
@@ -663,7 +664,8 @@ class FeatureExtraction:
             shape_vector = shape_vector_results[0]
 
             px = self.config['tasks']['feature_extraction']['image_size']
-            grid = self.get_grid(shape_vector_results)
+            orig_images = self.file_handler.get_input_files()
+            grid = self.get_grid(shape_vector_results, orig_images[name])
             #midline_intersection_points, normals, max_distance
             if grid is None:
                 ValueError("no grid was calculated")
@@ -684,16 +686,14 @@ class FeatureExtraction:
             self.file_handler.save_numpy_data(folder_name, structure_name, structure)
 
     def run(self, images, save_raw_features=[]):
-        # 1. first calculate all the needed data structures
+        # 1. first calculate all the needed data structures and make plots available
         data_structures = self.calculate_data_structures(images, save_raw_features)
 
-        # 1.2. save this data, where needed and make plots available
+        # 1.2. save this data, where needed
         self.save_data_structures(save_raw_features, data_structures)
 
-
-
         # 2. derive relevant features
-        # 2. from these datastructures derive wanted features
+        self.derive_features(data_structures, features)
 
     def extend_midline(self, midline, endpoints):
 
@@ -729,7 +729,32 @@ class FeatureExtraction:
 
         return (smoothed_x_ml, smoothed_y_ml), (new_points_x_ml, new_points_y_ml), total_length
 
+    def batch_weighted_intensities(self, image, polygons, shape=None):
+        """
+        image: 2D ndarray (grayscale)
+        polygons: List of polygons (each as list of (x, y))
+        shape: Shape of the image (height, width), if different from image.shape
+        """
+        if shape is None:
+            shape = image.shape
 
+        intensities = []
+        for poly_coords in polygons:
+            poly = Polygon(poly_coords)
+            mask = rasterize(
+                [(poly, 1)],
+                out_shape=shape,
+                fill=0,
+                dtype='float32',
+                all_touched=True  # oder False für präziser an den Pixelgrenzen
+            )
+            masked_values = image[mask.astype(bool)]
+            if masked_values.size > 0:
+                intensities.append(masked_values.mean())
+            else:
+                intensities.append(np.nan)
+
+        return np.array(intensities)
 
 
 

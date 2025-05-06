@@ -4,6 +4,7 @@ import numpy as np
 from pathlib import Path
 from PIL import Image
 import tensorflow as tf
+from tifffile import tifffile
 
 from src.feature_visualizer import FeatureVisualizer
 
@@ -17,36 +18,36 @@ class FileHandler:
         return folder_name / image_name
 
     def get_input_files(self, input_folder_name="input", keep_input_filenames=True):
-        file_extensions = ('.jpg', '.png', '.jpeg', '.tiff', '.npy')
+        file_extensions = ('.jpg', '.png', '.jpeg', '.tif', '.npy')
         input_image_filenames = self.get_image_filenames_from(input_folder_name, file_extensions=file_extensions)
         input_images = {}
         for i, image_filename in enumerate(input_image_filenames):
+            if keep_input_filenames:
+                image_key = os.path.basename(image_filename).split(".")[0]
+            else:
+                image_key = i
+
             if str(image_filename).endswith(".npy"):
-                if keep_input_filenames:
-                    image_key = os.path.basename(image_filename).split(".")[0]
-                else:
-                    image_key = i
                 input_images[image_key] = np.load(image_filename)
             #elif str(image).endswith(".tiff"):
             # TODO make work with Tiff-files
-            '''else:
-                image_file = Image.open(image)
-                image_data = np.array(image_file)
-                image_file.close()
-                image_data = self.pre_process_tiff_file(image_data)
-                input_images[image_key] = image_data'''
+            elif str(image_filename).endswith(".tif"):
+                tiff_data = tifffile.imread(image_filename)
+                image_data = self.get_mask_from_tiff(tiff_data)
+                input_images[image_key] = image_data
         keys_to_extract = ['test_images_TP_0', 'test_images_TP_1', 'test_images_TP_2']
         input_images = {k: input_images[k] for k in keys_to_extract if k in input_images}
         return input_images
 
-    def pre_process_tiff_file(self, image):
-        # phase_channel = [image[:, :, 0] for image in image_data]
+    def get_mask_from_tiff(self, image):
+        image_data = np.array(image)[0]
+        phase_channel = [image[:, :, 0] for image in image_data]
         # dna_channel = [image[:, :, 2] for image in image_data]
         # ToDo make tiff files work as input
-        image = tf.keras.layers.Resizing(height=320, width=320)(image)
-        image = image / np.max(image)
-        image = tf.cast(image, dtype=tf.float64)
-        return image
+        #image = tf.keras.layers.Resizing(height=320, width=320)(image)
+        #image = image / np.max(image)
+        #image = tf.cast(image, dtype=tf.float64)
+        return phase_channel
 
     def get_image_filenames_from(self, folder_name, file_extensions=None):
         if file_extensions is None:

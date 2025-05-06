@@ -1,16 +1,16 @@
 {
   "seed": 42,
   "model_name": "default",
-  "input_folder_name": "instances",
+  "input_folder_name": "input",
   "keep_input_filenames": true,
   "weights_path": "resources\\models\\default\\unet_model_30May24_Combined.weights.h5",
   "tasks": {
     "segmentation": {
-      "enabled": false,
+      "enabled": true,
       "save_output": true
     },
     "instance_segmentation": {
-      "enabled": false,
+      "enabled": true,
       "save_output": true
     },
     "feature_extraction": {

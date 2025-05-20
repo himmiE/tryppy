@@ -6,6 +6,7 @@ import random
 import matplotlib
 import networkx as nx
 import numpy as np
+import pandas as pd
 from matplotlib import pyplot as plt
 from matplotlib.collections import LineCollection
 from scipy.integrate import quad, IntegrationWarning
@@ -20,11 +21,15 @@ from shapely.geometry import Polygon, LineString
 from skimage import measure, morphology
 from skimage.draw import polygon
 from skimage.measure import regionprops
-from tqdm import tqdm
+from tqdm.auto import tqdm
+import matplotlib.pyplot as plt
+from matplotlib.patches import Polygon as MplPolygon
+from matplotlib.collections import PatchCollection
 
 from rasterio.features import rasterize
 from spatial_efd import spatial_efd
-
+import matplotlib.patches as mpatches
+from matplotlib import cm
 
 class FeatureExtraction:
     def __init__(self, config, file_handler):
@@ -49,103 +54,110 @@ class FeatureExtraction:
 
 
 
-    def plot(self, mask, contour=None, curvature=None, endpoints=None, midline=None,
+    def plot(self, crop, mask, contour=None, curvature=None, endpoints=None, midline=None,
              extended_midline=None, shape=None, grid=None, show=True, save=False, name=""):
         to_plot = self.config['tasks']['feature_extraction']['to_plot']
         fig, ax = plt.subplots(1, 2, sharex=True, sharey=True)
         title =""
-        min_col = 0
+        shifting = 0
         min_row = 0
+        current_field = 0
+        if "crop" in to_plot and crop is not None:
+            ax[current_field].imshow(crop[:, :, 0], cmap='gray', origin='upper')
+            ax[current_field].set_title('Phase')
+            ax[current_field].set_aspect('equal')
+            current_field += 1
 
-        if "mask" in to_plot:
-            ax[0].imshow(mask.T, cmap='gray', origin='upper')
-            ax[0].set_title('Mask')
-            ax[0].axis('off')
 
-            labeled_mask = skimage.measure.label(mask)
-            props = regionprops(labeled_mask)
-            min_row, min_col, max_row, max_col = props[0].bbox
+        if "mask" in to_plot and mask is not None:
+            ax[current_field].imshow(mask, cmap='gray', origin='upper')
+            ax[current_field].set_title('Mask')
 
-        if 'contour' in to_plot and contour is not None:
 
-            #align with mask
-            contour_x = contour[0] + min_col
-            contour_y = contour[1] + min_row
+            ax[current_field].set_aspect('equal')
+            current_field += 1
+        shifting = self.get_offset(mask)
+        if current_field < 2:
+            if 'contour' in to_plot and contour is not None:
 
-            if 'curvature' in to_plot and curvature is None:
-                title = "Contour"
-                ax[1].plot(contour_x, contour_y, color='cyan', linewidth=2, label='Contour')
-            else:
-                title = "Curvature"
-                ax[1].plot(contour_x, contour_y, color='cyan', linewidth=2)
-                points = np.array([contour_x, contour_y]).T
-                segments = [points[i:i + 2] for i in range(len(points) - 1)]
-                lc = LineCollection(segments, cmap='viridis', linewidth=3, array=curvature,
-                                    norm=plt.Normalize(vmin=np.min(curvature), vmax=np.max(curvature)), label='Curvature')
-                ax[1].add_collection(lc)
+                #align with mask
+                contour_x = contour[0] + shifting[0]
+                contour_y = contour[1] + shifting[1]
 
-        if 'endpoints' in to_plot and endpoints and contour:
-            title = title + ", enpoints"
-            start_idx, end_idx = endpoints
-            x_start, y_start = contour_x[start_idx], contour_y[start_idx]
-            x_end, y_end = contour_x[end_idx], contour_y[end_idx]
-            ax[1].scatter([x_start, x_end], [y_start, y_end], color='red', marker='o', s=30, label='Endpoints')
+                if 'curvature' in to_plot and curvature is None:
+                    title = "Contour"
+                    ax[current_field].plot(contour_x, contour_y, color='cyan', linewidth=2, label='Contour')
+                else:
+                    title = "Curvature"
+                    ax[current_field].plot(contour_x, contour_y, color='cyan', linewidth=2)
+                    points = np.array([contour_x, contour_y]).T
+                    segments = [points[i:i + 2] for i in range(len(points) - 1)]
+                    lc = LineCollection(segments, cmap='viridis', linewidth=3, array=curvature,
+                                        norm=plt.Normalize(vmin=np.min(curvature), vmax=np.max(curvature)), label='Curvature')
+                    ax[current_field].add_collection(lc)
 
-        if 'midline' in to_plot and midline is not None:
-            title = title + ", midline"
-            if extended_midline:
-                extended_x = extended_midline[1] + min_col
-                extended_y = extended_midline[0] + min_row
-                ax[1].plot(extended_x, extended_y, color='orange', linewidth=3, label='Extended-Midline')
+            if 'endpoints' in to_plot and endpoints and contour:
+                title = title + ", enpoints"
+                start_idx, end_idx = endpoints
+                x_start, y_start = contour_x[start_idx], contour_y[start_idx]
+                x_end, y_end = contour_x[end_idx], contour_y[end_idx]
+                ax[current_field].scatter([x_start, x_end], [y_start, y_end], color='red', marker='o', s=30, label='Endpoints')
 
-            x, y = zip(*midline)
-            x = np.array(x) + min_col
-            y = np.array(y) + min_row
-            ax[1].plot(x, y, color='red', linewidth=1, label='Midline')
+            if 'midline' in to_plot and midline is not None:
+                title = title + ", midline"
+                if extended_midline:
+                    extended_x = extended_midline[1] + shifting[0]
+                    extended_y = extended_midline[0] + shifting[1]
+                    ax[current_field].plot(extended_x, extended_y, color='orange', linewidth=3, label='Extended-Midline')
 
-        if 'shape' in to_plot and shape is not None:
-            title = title + ", shape"
-            distances_matrix, midline_intersection_points, normals, max_distance, all_intersections, opposite_intersections = shape
-            # Plot der Normalen mit skalierter Länge je nach Abstand
-            for i in range(len(normals)):
-                midline_x = midline_intersection_points[:, 1] + min_col
-                midline_y = midline_intersection_points[:, 0] + min_row
-                x0, y0 = midline_x[i], midline_y[i]
-                nx, ny = normals[i]
+                x, y = zip(*midline)
+                x = np.array(x) + shifting[0]
+                y = np.array(y) + shifting[1]
+                ax[current_field].plot(x, y, color='red', linewidth=1, label='Midline')
 
-                # Holen der Distanz aus distances_matrix (positive Richtung)
-                distance = distances_matrix[0, i]
+            if 'shape' in to_plot and shape is not None:
+                title = title + ", shape"
+                distances_matrix, midline_intersection_points, normals, max_distance, all_intersections, opposite_intersections = shape
+                # Plot der Normalen mit skalierter Länge je nach Abstand
+                for i in range(len(normals)):
+                    midline_x = midline_intersection_points[:, 1] + shifting[0]
+                    midline_y = midline_intersection_points[:, 0] + shifting[1]
+                    x0, y0 = midline_x[i], midline_y[i]
+                    nx, ny = normals[i]
 
-                # Normalenlänge skalieren
-                # Skalierung: max_distance als max. Länge der Normalen (optional anpassen)
-                normal_length = distance * max_distance  # Hier mit max_distance multiplizieren, um die Länge zu justieren
+                    # Holen der Distanz aus distances_matrix (positive Richtung)
+                    distance = distances_matrix[0, i]
 
-                # Normale zeichnen, skalierte Länge
-                ax[1].plot([x0, x0 + nx * normal_length], [y0, y0 + ny * normal_length], 'b--', alpha=0.5)
+                    # Normalenlänge skalieren
+                    # Skalierung: max_distance als max. Länge der Normalen (optional anpassen)
+                    normal_length = distance * max_distance  # Hier mit max_distance multiplizieren, um die Länge zu justieren
 
-            # Plot der Schnittpunkte in der positiven Richtung (grün)
-            all_intersections_x = [p[0] + min_col for p in all_intersections if not np.isnan(p[0])]
-            all_intersections_y = [p[1] + min_row for p in all_intersections if not np.isnan(p[1])]
-            ax[1].scatter(all_intersections_x, all_intersections_y, color='g', label="Schnittpunkte (positiv)", zorder=5)
+                    # Normale zeichnen, skalierte Länge
+                    ax[current_field].plot([x0, x0 + nx * normal_length], [y0, y0 + ny * normal_length], 'b--', alpha=0.5)
 
-            # Plot der Schnittpunkte in der negativen Richtung (orange)
-            opposite_intersections_x = [p[0] + min_col for p in opposite_intersections if not np.isnan(p[0])]
-            opposite_intersections_y = [p[1] + min_row for p in opposite_intersections if not np.isnan(p[1])]
-            ax[1].scatter(opposite_intersections_x, opposite_intersections_y, color='orange',
-                        label="Schnittpunkte (negativ)", zorder=5)
+                # Plot der Schnittpunkte in der positiven Richtung (grün)
+                all_intersections_x = [p[0] + shifting[0] for p in all_intersections if not np.isnan(p[0])]
+                all_intersections_y = [p[1] + shifting[1] for p in all_intersections if not np.isnan(p[1])]
+                ax[current_field].scatter(all_intersections_x, all_intersections_y, color='g', label="Schnittpunkte (positiv)", zorder=5)
 
-        if 'grid' in to_plot and grid is not None:
-            title = title + ", grid"
+                # Plot der Schnittpunkte in der negativen Richtung (orange)
+                opposite_intersections_x = [p[0] + shifting[0] for p in opposite_intersections if not np.isnan(p[0])]
+                opposite_intersections_y = [p[1] + shifting[1] for p in opposite_intersections if not np.isnan(p[1])]
+                ax[current_field].scatter(opposite_intersections_x, opposite_intersections_y, color='orange',
+                            label="Schnittpunkte (negativ)", zorder=5)
 
-            # Vierecke plotten
-            self.plot_quadrilaterals(ax[1], grid[0], min_col, min_row)
+            if 'grid' in to_plot and grid is not None:
+                title = title + ", grid"
 
-        ax[1].set_title(title)
-        ax[1].set_aspect('equal', 'box')
+                # Vierecke plotten
+                self.plot_quadrilaterals(ax[current_field], grid, shifting)
+
+        ax[current_field].set_title(title)
+        ax[current_field].set_aspect('equal')
         plt.tight_layout()
 
         if any([contour is not None, endpoints is not None, midline is not None]):
-            ax[1].legend(loc='lower right', fontsize='small')
+            ax[current_field].legend(loc='lower right', fontsize='small')
 
         if save:
             self.file_handler.save_plot("plots", name, plt)
@@ -156,7 +168,8 @@ class FeatureExtraction:
             plt.close(fig)
         return plt
 
-    def plot_quadrilaterals(self, ax, quadrilaterals, dx=0, dy=0):
+    def plot_quadrilaterals(self, ax, quadrilaterals, shifting):
+        dx, dy = shifting
         for quad in quadrilaterals:
             shifted = np.array(quad) + np.array([dx, dy])
             patch = matplotlib.patches.Polygon(shifted, closed=True, facecolor='cyan', edgecolor='black', alpha=0.3)
@@ -195,9 +208,6 @@ class FeatureExtraction:
             except Exception as e:
                 print(f"skipped contour: {e}")
 
-        if best_contour is None:
-            return None, None
-
         contour = best_contour
         coeffs = spatial_efd.CalculateEFD(contour[:, 0], contour[:, 1], harmonics=20)
         xt, yt = spatial_efd.inverse_transform(coeffs, harmonic=20, n_coords=10000)
@@ -205,7 +215,11 @@ class FeatureExtraction:
         shifted_xt = xt - np.min(xt)
         shifted_yt = yt - np.min(yt)
 
-        return shifted_xt, shifted_yt
+        poly = Polygon(best_contour[:, ::-1])
+        area = poly.area
+        perimeter = poly.length
+
+        return (shifted_yt, shifted_xt), area, perimeter
 
     def calculate_curvature(self, xt, yt, window_size=3, show=0):
         # Normalize the coordinates
@@ -280,7 +294,7 @@ class FeatureExtraction:
             print("no intersection could be found between the linear midline extension and the contour")
             return None
 
-    def find_minima_with_midline(self, xt, yt, midline, threshold=-20):
+    def find_minima_with_midline(self, xt, yt, midline, threshold=+20):
         midline = np.array(midline)
         start_point = midline[0]
         end_point = midline[-1]
@@ -292,19 +306,19 @@ class FeatureExtraction:
         extended_end = self.extend_line_to_contour(end_point, end_vec, xt, yt, midline)
 
         curvature = self.calculate_curvature(xt, yt)
-        minima_indices, _ = find_peaks(-curvature)
+        minima_indices, _ = find_peaks(curvature)
         minima_values = curvature[minima_indices]
 
         # Find minima below first threshold
-        filtered_indices = minima_indices[minima_values <= threshold]
-        filtered_values = minima_values[minima_values <= threshold]
+        filtered_indices = minima_indices[minima_values >= threshold]
+        filtered_values = minima_values[minima_values >= threshold]
 
         minima_coords = np.stack([yt[filtered_indices], xt[filtered_indices]], axis=1)
 
         dists_to_start = np.linalg.norm(minima_coords - extended_start, axis=1)
         dists_to_end = np.linalg.norm(minima_coords - extended_end, axis=1)
 
-        alpha = 0.5  # weight of the curvature in relation to the distance
+        alpha = -0.02  # weight of the curvature in relation to the distance
 
         score_start = dists_to_start + alpha * filtered_values
         score_end = dists_to_end + alpha * filtered_values
@@ -313,44 +327,6 @@ class FeatureExtraction:
         best_end_idx = filtered_indices[np.argmin(score_end)]  # Index des besten Endpunkts
 
         return best_start_idx, best_end_idx
-
-    def find_minima_with_threshold(self, xt, yt, curvature, first_threshold=-20, second_threshold=-45, show=0):
-        min_value_below_second_threshold = None
-        smallest_remaining_index = None
-
-        min_distance = int(len(curvature)*0.4)
-        minima_indices, _ = find_peaks(-curvature)
-        minima_values = curvature[minima_indices]
-
-        # Find minima below first threshold
-        first_threshold_indices = minima_indices[minima_values <= first_threshold]
-        first_threshold_values = minima_values[minima_values <= first_threshold]
-
-        # Find minima below second threshold
-        second_threshold_indices = first_threshold_indices[first_threshold_values <= second_threshold]
-        second_threshold_values = first_threshold_values[first_threshold_values <= second_threshold]
-
-        if len(second_threshold_values) > 0:
-            min_value_below_second_threshold = second_threshold_indices[np.argmin(second_threshold_values)]
-
-        def is_far_enough(idx1, idx2, threshold):
-            print(len(xt))
-            print(len(curvature))
-            distance_forward = (idx2 - idx1) % len(xt)
-            distance_backward = (idx1 - idx2) % len(xt)
-            smaller_distance = min(distance_backward, distance_forward)
-            return smaller_distance >= threshold
-
-        # Find other minima below first threshold that are some minimum distance away
-        remaining_indices = [idx for idx in first_threshold_indices if
-                             min_value_below_second_threshold is None
-                             or is_far_enough(idx, min_value_below_second_threshold,min_distance)]
-        remaining_values = curvature[remaining_indices]
-
-        if len(remaining_values) > 0:
-            smallest_remaining_index = remaining_indices[np.argmin(remaining_values)]
-
-        return min_value_below_second_threshold, smallest_remaining_index
 
     def mask_from_contour(self, contour_x, contour_y):
         # Koordinaten in int konvertieren
@@ -597,14 +573,14 @@ class FeatureExtraction:
 
         return distances_matrix, midline_intersection_points, normals, max_distance, all_intersections, opposite_intersections
 
-    def get_grid(self, shape_vector, orig_image, num_vertical_splits=3):
+    def get_grid(self, shape_vector, image_crop, shifting, num_vertical_splits=3):
         distances_matrix, midline_intersection_points, normals, max_distance, _, _ = shape_vector
         cells = self.create_coordinates(midline_intersection_points, normals, max_distance, num_vertical_splits)
-        intensities = self.batch_weighted_intensities(orig_image, cells)
+        intensities = self.batch_weighted_intensities(image_crop[:, :, 2], cells, shifting)
 
-        return cells
+        return cells, intensities
 
-    def calculate_data_structures(self, images, features):
+    def calculate_data_structures(self, crops, masks, features):
         contours = dict()
         curvatures = dict()
         midlines = dict()
@@ -618,66 +594,102 @@ class FeatureExtraction:
             'grid': grids
         }
 
-        datapoints_to_plot = []
+        if not masks:
+            masks = self.file_handler.get_input_files(input_folder_name="mask", extension=".npy")
+
+        #datapoints_to_plot = []
         plot_features = self.config['tasks']['feature_extraction']['to_plot'] # TODO curvature without contour not possible
         save_plots = self.config['tasks']['feature_extraction']['save_plots']
         if plot_features and save_plots > 0:
             seed = self.config['seed']
             random.seed(seed)
-            datapoints_to_plot = random.sample(list(images.keys()), min(save_plots, len(images.keys())))
+            #datapoints_to_plot = random.sample(list(list(masks.values()).keys()), min(save_plots, len(masks.keys())))
 
-        for name, image in tqdm(images.items()):  # TODO: calculate only what is desired
-            contour = self.get_contour(image)
-            contour_x, contour_y = contour
+        # TODO: calculate only what is desired
+        features = []
+        for orig_id, mask_dict in masks.items():
+            contours[orig_id] = {}
+            curvatures[orig_id] = {}
+            midlines[orig_id] = {}
+            endpoints_s[orig_id] = {}
+            grids[orig_id] = {}
 
-            #self.plot(image, show=True)
+            for crop_id, mask in mask_dict.items():
+                temp_features = {}
+                shifting = self.get_offset(mask)
 
-            if contour_x is None:
-                ValueError("no contour was calculated")
-                continue
-            contours[name] = (contour_x, contour_y)
+                crop = crops[orig_id][crop_id]
+                #self.plot(crop, mask, show=self.config['tasks']['feature_extraction']['show_plots'])
 
-            curvature = self.calculate_curvature(contour_x, contour_y)
-            if curvature is None:
-                ValueError("no curvature was calculated")
-                continue
-            curvatures[name] = curvature
+                contour, area, perimeter = self.get_contour(mask)
+                temp_features['crop_id'] = crop_id
+                temp_features['orig_image'] = orig_id
+                temp_features['area'] = area
+                temp_features['perimeter'] = perimeter
+                contour_x, contour_y = contour
 
-            midline = self.get_midline(contour_x, contour_y)
-            if midline is None:
-                ValueError("no midline was calculated")
-                continue
-            midlines[name] = midline
+                if contour_x is None:
+                    ValueError("no contour was calculated")
+                    continue
+                contours[orig_id][crop_id] = (contour_x, contour_y)
+                #self.plot(None, mask, contour=(contour_x, contour_y), show=self.config['tasks']['feature_extraction']['show_plots'])
 
-            endpoints = self.find_endpoints(contour_x, contour_y, curvature, midline)
-            if endpoints is None:
-                ValueError("no endpoints were calculated")
-                continue
-            endpoints_s[name] = endpoints
+                curvature = self.calculate_curvature(contour_x, contour_y)
+                if curvature is None:
+                    ValueError("no curvature was calculated")
+                    continue
+                curvatures[orig_id][crop_id] = curvature
+                #self.plot(None, mask, contour=(contour_x, contour_y), curvature=curvature,
+                #          show=self.config['tasks']['feature_extraction']['show_plots'])
 
-            endpoint_coords = ((contour_x[endpoints[0]], contour_y[endpoints[0]]),
-                               (contour_x[endpoints[1]], contour_y[endpoints[1]]))
+                midline = self.get_midline(contour_x, contour_y)
+                if midline is None:
+                    ValueError("no midline was calculated")
+                    continue
+                midlines[orig_id][crop_id] = midline
 
-            extended_midline, new_points, total_length = self.extend_midline(midline, endpoint_coords)
 
-            shape_vector_results = self.get_shape_vector(contour, extended_midline)
-            shape_vector = shape_vector_results[0]
+                endpoints = self.find_endpoints(contour_x, contour_y, curvature, midline)
+                if endpoints is None:
+                    ValueError("no endpoints were calculated")
+                    continue
+                endpoints_s[orig_id][crop_id] = endpoints
+                #self.plot(None, mask, contour=(contour_x, contour_y), curvature=curvature, midline=midline, name=crop_id,
+                #          endpoints=endpoints, show=self.config['tasks']['feature_extraction']['show_plots'])
 
-            px = self.config['tasks']['feature_extraction']['image_size']
-            orig_images = self.file_handler.get_input_files()
-            grid = self.get_grid(shape_vector_results, orig_images[name])
-            #midline_intersection_points, normals, max_distance
-            if grid is None:
-                ValueError("no grid was calculated")
-                continue
-            else:
-                grids[name] = grid
-            if name in datapoints_to_plot:
-                self.plot(image, contour=(contour_x, contour_y), curvature=curvature, midline=midline, name=name,
-                          endpoints=endpoints, extended_midline=extended_midline, shape=shape_vector_results, grid=grid,
+                endpoint_coords = ((contour_x[endpoints[0]], contour_y[endpoints[0]]),
+                                   (contour_x[endpoints[1]], contour_y[endpoints[1]]))
+
+                extended_midline, new_points, total_length = self.extend_midline(midline, endpoint_coords)
+                temp_features['length'] = total_length
+
+                shape_vector_results = self.get_shape_vector(contour, extended_midline)
+                shape_vector = shape_vector_results[0]
+                temp_features['shape'] = shape_vector
+
+                #self.plot(None, mask, contour=(contour_x, contour_y), curvature=curvature, midline=midline, name=crop_id,
+                #          endpoints=endpoints, extended_midline=extended_midline, shape=shape_vector_results,
+                #           show=self.config['tasks']['feature_extraction']['show_plots'])
+
+                px = self.config['tasks']['feature_extraction']['image_size']
+                cells, intensities = self.get_grid(shape_vector_results, crop, shifting)
+                temp_features['intensities'] = intensities
+
+                features.append(temp_features)
+
+                #midline_intersection_points, normals, max_distance
+                if cells is None:
+                    ValueError("no grid was calculated")
+                    continue
+                else:
+                    grids[orig_id][crop_id] = intensities
+                #if crop_id in datapoints_to_plot:
+                self.plot(None, mask, contour=(contour_x, contour_y), curvature=curvature, midline=midline, name=crop_id,
+                          endpoints=endpoints, extended_midline=extended_midline, shape=shape_vector_results,
+                          grid=cells,
                           save=True, show=self.config['tasks']['feature_extraction']['show_plots'])
 
-        return data_structures
+        return data_structures, features
 
     def save_data_structures(self, structures_to_save, data_structures):
         for structure_name in structures_to_save:
@@ -685,15 +697,16 @@ class FeatureExtraction:
             folder_name = structure_name
             self.file_handler.save_numpy_data(folder_name, structure_name, structure)
 
-    def run(self, images, save_raw_features=[]):
+    def run(self, crops, masks, save_raw_features=[]):
         # 1. first calculate all the needed data structures and make plots available
-        data_structures = self.calculate_data_structures(images, save_raw_features)
+        data_structures, features = self.calculate_data_structures(crops, masks, save_raw_features)
 
         # 1.2. save this data, where needed
         self.save_data_structures(save_raw_features, data_structures)
 
         # 2. derive relevant features
-        self.derive_features(data_structures, features)
+        df = self.make_df(features)
+        self.file_handler.save_df(df)
 
     def extend_midline(self, midline, endpoints):
 
@@ -729,17 +742,19 @@ class FeatureExtraction:
 
         return (smoothed_x_ml, smoothed_y_ml), (new_points_x_ml, new_points_y_ml), total_length
 
-    def batch_weighted_intensities(self, image, polygons, shape=None):
+    def batch_weighted_intensities(self, image, polygons, shifting, shape=(320, 320)):
         """
         image: 2D ndarray (grayscale)
         polygons: List of polygons (each as list of (x, y))
         shape: Shape of the image (height, width), if different from image.shape
         """
-        if shape is None:
-            shape = image.shape
+        image = image.astype(np.float32) / 65535.0
+        shiftes_polygons = []
+        for quad in polygons:
+            shiftes_polygons.append(np.array(quad) + np.array([shifting[0], shifting[1]]))
 
         intensities = []
-        for poly_coords in polygons:
+        for poly_coords in shiftes_polygons:
             poly = Polygon(poly_coords)
             mask = rasterize(
                 [(poly, 1)],
@@ -749,12 +764,47 @@ class FeatureExtraction:
                 all_touched=True  # oder False für präziser an den Pixelgrenzen
             )
             masked_values = image[mask.astype(bool)]
-            if masked_values.size > 0:
-                intensities.append(masked_values.mean())
-            else:
-                intensities.append(np.nan)
+            intensities.append(masked_values.mean())
 
         return np.array(intensities)
+
+    def get_offset(self, mask):
+        labeled_mask = skimage.measure.label(mask)
+        props = regionprops(labeled_mask)
+        min_row, min_col, max_row, max_col = props[0].bbox
+        return min_col, min_row
+
+    def make_df(self, features):
+        # Liste für vorbereitete Daten
+        flattened_data = []
+
+        for entry in features:
+            row = {
+                'crop_id': entry['crop_id'],
+                'orig_image': entry['orig_image'],
+                'area': entry['area'],
+                'perimeter': entry['perimeter'],
+                'length': entry['length'],
+            }
+
+            # 2D array flatten mit eindeutigen Namen
+            shape_array = entry['shape'].flatten()
+            half = len(shape_array) / 2
+            for i, val in enumerate(shape_array):
+                if i/half < 1:
+                    row[f'distance_{'left'}_{i}'] = val
+                else:
+                    row[f'distance_{'right'}_{i}'] = val
+
+            # 1D array für Intensitäten
+            for i, val in enumerate(entry['intensities']):
+                row[f'intensity_{i}'] = val
+
+            flattened_data.append(row)
+
+        # DataFrame erzeugen
+        df = pd.DataFrame(flattened_data)
+        return df
 
 
 

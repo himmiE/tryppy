@@ -6,7 +6,7 @@ from src.file_handler import FileHandler
 from src.transformations.classification import Classification
 from src.transformations.feature_extraction import FeatureExtraction
 from src.transformations.instance_segmentation import InstanceSegmentation
-from src.transformations.segmentation import Segmentation
+from src.transformations.segmentation import MaskExtraction
 
 class Tryppy:
     def __init__(self, datapath, config_filename='config.json'):
@@ -29,22 +29,28 @@ class Tryppy:
         return features_to_save
 
     def run(self):
-        images = self.file_handler.get_input_files(self.config["input_folder_name"], keep_input_filenames=self.config["keep_input_filenames"])
-        if self.config['tasks']['segmentation']['enabled']:
-            segmentation_result = Segmentation().run(images)
-            if self.config['tasks']['segmentation']['save_output']:
-                self.file_handler.save_images_to("segmented", segmentation_result)
-            images = segmentation_result
+        images = self.file_handler.get_input_files(self.config["input_folder_name"], self.config["input_extension"])
+        full_image_masks=[]
+        masks=[]
+        if self.config['tasks']['full_image_masks']['enabled']:
+            print("generating mask from input")
+            full_image_masks = MaskExtraction().run(images)
+            if self.config['tasks']['full_image_masks']['save_output']:
+                self.file_handler.save_images_to("full_image_masks", full_image_masks)
 
-        if self.config['tasks']['instance_segmentation']['enabled']:
-            instance_segmentation_result = InstanceSegmentation().run(images)
-            if self.config['tasks']['instance_segmentation']['save_output']:
-                self.file_handler.save_images_to('instances', instance_segmentation_result)
-            images = instance_segmentation_result
+        if self.config['tasks']['crop']['enabled']:
+            print("cropping masks and images")
+            crops, masks = InstanceSegmentation(self.file_handler).run(images, full_image_masks)
+            if self.config['tasks']['crop']['save_crop']:
+                self.file_handler.save_images_to("crops", crops)
+            if self.config['tasks']['crop']['save_mask']:
+                self.file_handler.save_images_to("mask", masks)
+            images = crops
 
         if self.config['tasks']['feature_extraction']['enabled']:
+            print("starting feature extraction")
             features_to_save = self.get_features_to_save()
-            features = FeatureExtraction(self.config, self.file_handler).run(images, features_to_save)
+            features = FeatureExtraction(self.config, self.file_handler).run(images, masks, features_to_save)
             images = features
 
         if self.config['tasks']['classification']['enabled']:

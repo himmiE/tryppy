@@ -1,103 +1,122 @@
-import skimage
+import os
+import os.path
+
 import numpy as np
-from src.transformations.model import Model
+import skimage
+import skimage.io
+import tqdm
+from tifffile import tifffile
+from tifffile.tifffile import TiffFile
+
+#from dimensionality_reduction import shape
 
 
 class InstanceSegmentation:
-    def __init__(self):
-        self.model = Model()
+    def __init__(self, fileHandler):
+        self.fileHandler = fileHandler
 
-    def get_needed_padding(self, height, width, patch_height, patch_width):
-        mod_height = height % patch_height  # Todo why modulo instead of difference?
-        mod_width = width % patch_width
-        pad_height = patch_height - mod_height if mod_height != 0 else 0
-        pad_width = patch_width - mod_width if mod_width != 0 else 0
-        return pad_height, pad_width
+    def run(self, images, masks={}):
+        crops = {}
+        mask_crops = {}
 
-    def extract_patches(self, image, patch_size):
-        patches = []
+        if not masks:
+            mask_folder_name = "mask"
+            masks = self.fileHandler.get_input_files(input_folder_name=mask_folder_name)
+        for image_id, image in images.items():
+            crops[image_id], mask_crops[image_id] = self.crop_images_and_masks(image, masks[image_id], image_id)
+        return crops, mask_crops
 
-        # Calculate padding needed
-        height, width = image.shape[:2]
-        patch_height, patch_width = patch_size
-        pad_height, pad_width = self.get_needed_padding(height, width, patch_height, patch_width)
+    def create_crops_from_mask(self, image, mask, min_threshold, max_threshold):
+        #image = np.moveaxis(image, 0, -1)
+        labeled_mask = skimage.measure.label(mask)
+        props = skimage.measure.regionprops(labeled_mask)
 
-        # Pad the image
-        image = image.squeeze()
-        image = np.pad(image, ((0, pad_height), (0, pad_width)), mode='constant', constant_values=0)
-
-        for y in range(0, height + pad_height, patch_height):
-            for x in range(0, width + pad_width, patch_width):
-                patch = image[y:y + patch_height, x:x + patch_width]
-                patches.append(patch)
-
-        return patches
-
-    def merge_patches(self, patches, image_shape):
-        height, width = image_shape[:2]
-
-        patch_height, patch_width = patches[0].shape
-
-        # Calculate padding needed
-        pad_height = patch_height - height % patch_height # Todo: Duplicate code
-        pad_width = patch_width - width % patch_width
-
-        output_image = np.zeros((height + pad_height, width + pad_width), dtype=np.uint8)
-        patch_height, patch_width = patches[0].shape[:2]
-
-        patch_index = 0
-        for y in range(0, height, patch_height):
-            for x in range(0, width, patch_width):
-                patch = patches[patch_index]
-                output_image[y:y + patch_height, x:x + patch_width] = patch[:patch_height, :patch_width]
-                patch_index += 1
-
-        output_image = output_image[:height, :width]
-
-        return output_image.astype(np.uint8)
-
-    def window_segmentation(self, mask, patch_size=(320, 320)):
-        patches = self.extract_patches(mask, patch_size)
-        segmented_image = self.merge_patches(patches, mask.shape)
-        return segmented_image
-
-    def cleanup_segmentation_mask(self, raw_mask):
-        # label image
-        labeled_image, num = skimage.measure.label(raw_mask, return_num=True)
-
-        # clear border
-        cleared_border = skimage.segmentation.clear_border(labeled_image)
-
-        # thresholding
-        cleaned_image = cleared_border.copy()
-        props = skimage.measure.regionprops(cleaned_image)
-        area_threshold = 2000
-
-        c_mask = np.zeros(cleaned_image.shape)
-        rr, cc = skimage.draw.disk(
-            (int(np.floor(cleaned_image.shape[0] / 2) + 52), int(np.floor(cleaned_image.shape[1] / 2) + 2)), 1450,
-            shape=cleaned_image.shape)
-        c_mask[rr, cc] = 1
-
+        coords = []  # Storage for cropped masks
+        centroids = []
+        padding = []
         for prop in props:
-            if prop.area < area_threshold:
-                cleaned_image[cleaned_image == prop.label] = 0
-            coords = prop.coords
+            if prop.area < min_threshold or prop.area > max_threshold:
+                continue
+            center_r, center_c = prop.centroid
+            start_r = int(center_r - 320 // 2)
+            start_c = int(center_c - 320 // 2)
 
-            # If any of the coordinates of the region falls outside the circle, remove the region
-            if np.any(c_mask[coords[:, 0], coords[:, 1]] == 0):
-                cleaned_image[cleaned_image == prop.label] = 0
+            # Determine padding sizes
+            pad_top = max(0, -start_r)
+            pad_bottom = max(0, start_r + 320 - image.shape[0])
+            pad_left = max(0, -start_c)
+            pad_right = max(0, start_c + 320 - image.shape[1])
 
-        return cleaned_image > 0
+            # Update start_r and start_c to account for the padding
+            start_r += pad_top
+            start_c += pad_left
 
-    def run(self, mask_images):
-        segmentation_masks = {}
-        for mask_id, mask in mask_images.items():
-            segmented_image = self.window_segmentation(mask)
-            final_mask = self.cleanup_segmentation_mask(segmented_image)
-            final_mask = final_mask * 255
-            final_mask = final_mask.astype(np.uint8)
-            segmentation_masks[mask_id] = final_mask
-        return segmentation_masks
+            padding.append((pad_top, pad_bottom, pad_left, pad_right))
+            coords.append((start_r, start_c))  # Append the cropped mask
+            centroids.append(prop.centroid)
+
+        return padding, coords, centroids  # Return both cropped images and masks
+
+    def crop_images_and_masks(self, image, mask, image_id):
+        #imagej_hyperstack = image.asarray()
+        #imagej_metadata = image.imagej_metadata
+        crops = {}
+        mask_crops = {}
+
+        padding, coords, centroids = self.create_crops_from_mask(image, mask, 100, 10000)
+
+        # Save each cropped image and cropped mask to path_for_crops
+        for j, (start_r, start_c) in enumerate(coords):
+            if j == 118:
+                print("problem-child")
+            pad_top, pad_bottom, pad_left, pad_right = padding[j]
+            padded_image = image.copy()
+            padded_mask = mask.copy()
+            padded_image = np.pad(padded_image, ((pad_top, pad_bottom), (pad_left, pad_right), (0, 0)), mode='constant')
+            padded_mask = np.pad(padded_mask, ((pad_top, pad_bottom), (pad_left, pad_right)), mode='constant')
+            cropped_image = padded_image[start_r:start_r + 320, start_c:start_c + 320, :]
+            cropped_mask = padded_mask[start_r:start_r + 320, start_c:start_c + 320]  # Crop the mask
+            cropped_mask = self.reduce_mask(cropped_mask)
+            labeled_mask = skimage.measure.label(cropped_mask)
+            cleared_border = skimage.segmentation.clear_border(labeled_mask)
+            if cleared_border.max() == 0:
+                continue
+            name = f"{image_id}_{j}"
+            mask_crops[name] = cleared_border
+            crops[name] = cropped_image
+        return crops, mask_crops
+
+    def reduce_mask(self, mask):
+        """
+        This function converts a mask to a contour by focusing on the central region.
+        Args:
+            mask_path (str): The path to the mask image.
+        Returns:
+            ndarray: A reduced image where only the region of the center label is kept.
+        """
+        # Read the image from the mask path
+
+        labeled_mask = skimage.measure.label(mask)
+
+        # Find the center point of the image
+        center_point = np.array([int(np.floor(mask.shape[0] / 2)), int(np.floor(mask.shape[1] / 2))])
+
+        props = skimage.measure.regionprops(labeled_mask)
+
+        label = 0
+        min_distance = 5000000
+        for prop in props:
+            distance_to_center = np.min(np.sum((np.array(prop.centroid) - center_point) ** 2, axis=0))
+            if distance_to_center < min_distance:
+                min_distance = distance_to_center
+                label = prop.label
+
+        # Create a reduced image where only the region with the center label is kept
+        reduced_image = labeled_mask == label
+        return reduced_image
+
+
+
+
 
             

@@ -1,4 +1,5 @@
 import keras
+import numpy as np
 from keras import layers
 import tensorflow as tf
 from keras.src.optimizers import Adam
@@ -56,6 +57,16 @@ class Model:
 
         return model
 
+    def input_tensor_preprocessing(self, image):
+        x_image = image
+        if x_image.ndim == 2:
+            x_image = np.expand_dims(x_image, axis=0)
+        x_image = np.expand_dims(x_image, axis=-1)
+        x_image = tf.convert_to_tensor(x_image)
+        x_image = x_image / np.max(x_image)
+        x_image = tf.cast(x_image, dtype=tf.float64)
+        return x_image
+
     def load_model(self):
         unet = self.build_unet_model()
         metrics = [keras.metrics.BinaryIoU(target_class_ids=[0, 1], threshold=0.5)]
@@ -67,6 +78,8 @@ class Model:
 
     def predict(self, image):
         #predictions = self.unet.predict(tf.stack(image))
-        predictions = self.unet.predict(image)
-        predictions = predictions > 0.5
+        model_input = self.input_tensor_preprocessing(image)
+        predictions = self.unet.predict(model_input)
+        predictions = tf.squeeze(predictions)
+        predictions = predictions.numpy() > 0.5
         return predictions

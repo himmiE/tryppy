@@ -10,7 +10,6 @@ from src.transformations.segmentation import MaskExtraction
 
 class Tryppy:
     def __init__(self, datapath, config_filename='config.json'):
-        self.incomplete_data = dict() #TODO
         config_path = datapath / config_filename
 
         self.ensure_config_exists(config_path)
@@ -28,10 +27,12 @@ class Tryppy:
             features_to_save.append(feature)
         return features_to_save
 
+
     def run(self):
         images = self.file_handler.get_input_files(self.config["input_folder_name"], self.config["input_extension"])
         full_image_masks=[]
         masks=[]
+        result = {}
         if self.config['tasks']['full_image_masks']['enabled']:
             print("generating mask from input")
             full_image_masks = MaskExtraction().run(images)
@@ -45,20 +46,21 @@ class Tryppy:
                 self.file_handler.save_images_to("crops", crops)
             if self.config['tasks']['crop']['save_mask']:
                 self.file_handler.save_images_to("mask", masks)
-            images = crops
+            result = crops
 
         if self.config['tasks']['feature_extraction']['enabled']:
             print("starting feature extraction")
             features_to_save = self.get_features_to_save()
-            features = FeatureExtraction(self.config, self.file_handler).run(images, masks, features_to_save)
-            images = features
+            feature_df = FeatureExtraction(self.config, self.file_handler).run(result, masks, features_to_save)
+            result = feature_df
 
         if self.config['tasks']['classification']['enabled']:
-            classification_result = Classification().run(images)
+            classification_result, count_classes = Classification(self.file_handler).run(result)
             if self.config['tasks']['classification']['save_output']:
-                self.file_handler.save_images_to('classification', classification_result)
-            images = classification_result
-        return images
+                self.file_handler.save_as_json_files(None,'classification', classification_result)
+                self.file_handler.save_as_json_files(None, 'class_count', count_classes)
+            result = classification_result
+        return result
 
     def ensure_config_exists(self, config_path):
         if not os.path.isfile(config_path):

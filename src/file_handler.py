@@ -2,10 +2,10 @@ import json
 import os
 import numpy as np
 from pathlib import Path
-from PIL import Image
-import tensorflow as tf
-from tifffile import tifffile
 import skimage
+import joblib
+import pkgutil
+import io
 
 from src.feature_visualizer import FeatureVisualizer
 
@@ -21,8 +21,6 @@ class FileHandler:
     def load_file(self, filepath):
         if str(filepath).endswith(".npy"):
             return np.load(filepath)
-        # elif str(image).endswith(".tiff"):
-        # TODO make work with Tiff-files
         elif str(filepath).endswith(".tif"):
             tiff_data = skimage.io.imread(filepath, plugin="pil")
             return tiff_data
@@ -57,20 +55,11 @@ class FileHandler:
 
         return input_images
 
-    '''def get_mask_from_tiff(self, image):
-        #image_data = np.array(image)[0]
-        phase_channel = np.array(image)[0]
-        # dna_channel = np.array(image)[1] for image in image_data]
-        # ToDo make tiff files work as input
-        #image = tf.keras.layers.Resizing(height=320, width=320)(image)
-        #image = image / np.max(image)
-        #image = tf.cast(image, dtype=tf.float64)
-        return phase_channel'''
-
     def get_image_filenames_from(self, folder_name, file_extensions=None):
         if file_extensions is None:
             file_extensions = "npy"
         folder_path = self.data_dir / folder_name
+        os.makedirs(folder_path, exist_ok=True)
         filenames = {folder_path: []}
         for image_name in os.listdir(folder_path):
             if image_name.endswith(file_extensions):
@@ -91,7 +80,10 @@ class FileHandler:
         return filenames
 
     def save_images_to(self, folder_name, images):
-        folder_path = self.data_dir / folder_name
+        if folder_name:
+            folder_path = self.data_dir / folder_name
+        else:
+            folder_path = self.data_dir
         os.makedirs(folder_path, exist_ok=True)
         for name, image in images.items():
             if isinstance(image, dict):
@@ -102,9 +94,12 @@ class FileHandler:
                 np.save(file=image_path, arr=image)
 
     def save_as_json_files(self, folder_name, filename, data):
-        folder_path = self.data_dir / folder_name
+        if folder_name:
+            folder_path = self.data_dir / folder_name
+        else:
+            folder_path = self.data_dir
         os.makedirs(folder_path, exist_ok=True)
-        file_path = self.data_dir / folder_name / f"{filename}.json"
+        file_path = folder_path / f"{filename}.json"
         file = open(file_path, "w")
         json.dump(data, file)
 
@@ -115,10 +110,10 @@ class FileHandler:
             file_path = folder_path / filename
             np.save(file_path, data_dict[file_name])
 
-    def save_feature_data(self, feature, param):
+    '''def save_feature_data(self, feature, param): #Todo
         if feature == "contour":
             pass
-        pass
+        pass'''
 
     def save_plot(self, folder_name, filename, plt):
         folder_path = self.data_dir / folder_name
@@ -126,4 +121,13 @@ class FileHandler:
         file_path = self.data_dir / folder_name / f"{filename}.png"
         plt.savefig(file_path)
         pass
+
+    def load_rf(self):
+        model_data = pkgutil.get_data(__name__, 'resources/rf_model/random_forest_model.joblib')
+        label_encoder_data = pkgutil.get_data(__name__, 'resources/rf_model/label_encoder.joblib')
+
+        # Bytes in ein File-like Object umwandeln
+        model = joblib.load(io.BytesIO(model_data))
+        label_encoder = joblib.load(io.BytesIO(label_encoder_data))
+        return model, label_encoder
 

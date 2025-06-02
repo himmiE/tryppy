@@ -18,7 +18,14 @@ setup(
         'tensorflow',
         'keras',
         'matplotlib',
-        'shapely'
+        'shapely',
+        'joblib',
+        'networkx',
+        'pandas',
+        'rasterio',
+        'tqdm',
+        'tifffile',
+        'setuptools',
     ],
     classifiers=[
         'Programming Language :: Python :: 3',

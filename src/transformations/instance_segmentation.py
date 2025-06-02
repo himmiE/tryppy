@@ -27,7 +27,6 @@ class InstanceSegmentation:
         return crops, mask_crops
 
     def create_crops_from_mask(self, image, mask, min_threshold, max_threshold):
-        #image = np.moveaxis(image, 0, -1)
         labeled_mask = skimage.measure.label(mask)
         props = skimage.measure.regionprops(labeled_mask)
 
@@ -58,8 +57,6 @@ class InstanceSegmentation:
         return padding, coords, centroids  # Return both cropped images and masks
 
     def crop_images_and_masks(self, image, mask, image_id):
-        #imagej_hyperstack = image.asarray()
-        #imagej_metadata = image.imagej_metadata
         crops = {}
         mask_crops = {}
 
@@ -67,8 +64,6 @@ class InstanceSegmentation:
 
         # Save each cropped image and cropped mask to path_for_crops
         for j, (start_r, start_c) in enumerate(coords):
-            if j == 118:
-                print("problem-child")
             pad_top, pad_bottom, pad_left, pad_right = padding[j]
             padded_image = image.copy()
             padded_mask = mask.copy()

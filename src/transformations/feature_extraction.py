@@ -1,13 +1,9 @@
-import glob
 import math
-import os.path
 import random
-
 import matplotlib
 import networkx as nx
 import numpy as np
 import pandas as pd
-from matplotlib import pyplot as plt
 from matplotlib.collections import LineCollection
 from scipy.integrate import quad, IntegrationWarning
 import skimage
@@ -18,18 +14,13 @@ from scipy.interpolate import UnivariateSpline
 from scipy.optimize import fsolve
 from shapely import affinity, Point
 from shapely.geometry import Polygon, LineString
-from skimage import measure, morphology
 from skimage.draw import polygon
 from skimage.measure import regionprops
-from tqdm.auto import tqdm
 import matplotlib.pyplot as plt
 from matplotlib.patches import Polygon as MplPolygon
-from matplotlib.collections import PatchCollection
-
 from rasterio.features import rasterize
 from spatial_efd import spatial_efd
-import matplotlib.patches as mpatches
-from matplotlib import cm
+
 
 class FeatureExtraction:
     def __init__(self, config, file_handler):
@@ -255,17 +246,11 @@ class FeatureExtraction:
 
         return np.array(curvatures)
 
-    def find_endpoints(self, contour_x, contour_y, curvature, midline, threshold=False):
-        head = None
-        tail = None
-        if threshold:
-            head, tail = self.find_minima_with_threshold(contour_x, contour_y, curvature)
-        if head is None or tail is None:
-            head, tail = self.find_minima_with_midline(contour_x, contour_y, midline)
+    def find_endpoints(self, contour_x, contour_y, curvature, midline):
+        head, tail = self.find_minima_with_midline(contour_x, contour_y, curvature, midline)
         return head, tail
 
-
-    def extend_line_to_contour(self, start_point, direction, contour_x, contour_y, midline):
+    def extend_line_to_contour(self, start_point, direction, contour_x, contour_y):
         contour_points = list(zip(contour_x, contour_y))
         poly = Polygon(contour_points)
         min_x, min_y, max_x, max_y = poly.bounds
@@ -275,7 +260,6 @@ class FeatureExtraction:
         line = LineString([
             (start_point[0], start_point[1]),
             (start_point[0] + direction[0], start_point[1] + direction[1])
-            #(start_point[1] + length * direction[1], start_point[0] + length * direction[0])
         ])
         long_line = affinity.scale(line, xfact=length, yfact=length, origin=tuple(start_point))
 
@@ -294,7 +278,7 @@ class FeatureExtraction:
             print("no intersection could be found between the linear midline extension and the contour")
             return None
 
-    def find_minima_with_midline(self, xt, yt, midline, threshold=+20):
+    def find_minima_with_midline(self, xt, yt, curvature, midline, threshold=+20):
         midline = np.array(midline)
         start_point = midline[0]
         end_point = midline[-1]
@@ -302,10 +286,9 @@ class FeatureExtraction:
         start_vec = start_point - midline[5]
         end_vec = end_point - midline[-6]
 
-        extended_start = self.extend_line_to_contour(start_point, start_vec, xt, yt, midline)
-        extended_end = self.extend_line_to_contour(end_point, end_vec, xt, yt, midline)
+        extended_start = self.extend_line_to_contour(start_point, start_vec, xt, yt)
+        extended_end = self.extend_line_to_contour(end_point, end_vec, xt, yt)
 
-        curvature = self.calculate_curvature(xt, yt)
         minima_indices, _ = find_peaks(curvature)
         minima_values = curvature[minima_indices]
 
@@ -598,14 +581,13 @@ class FeatureExtraction:
             masks = self.file_handler.get_input_files(input_folder_name="mask", extension=".npy")
 
         #datapoints_to_plot = []
-        plot_features = self.config['tasks']['feature_extraction']['to_plot'] # TODO curvature without contour not possible
+        plot_features = self.config['tasks']['feature_extraction']['to_plot']
         save_plots = self.config['tasks']['feature_extraction']['save_plots']
         if plot_features and save_plots > 0:
             seed = self.config['seed']
             random.seed(seed)
             #datapoints_to_plot = random.sample(list(list(masks.values()).keys()), min(save_plots, len(masks.keys())))
 
-        # TODO: calculate only what is desired
         features = []
         for orig_id, mask_dict in masks.items():
             contours[orig_id] = {}
@@ -619,7 +601,6 @@ class FeatureExtraction:
                 shifting = self.get_offset(mask)
 
                 crop = crops[orig_id][crop_id]
-                #self.plot(crop, mask, show=self.config['tasks']['feature_extraction']['show_plots'])
 
                 contour, area, perimeter = self.get_contour(mask)
                 temp_features['crop_id'] = crop_id
@@ -632,15 +613,12 @@ class FeatureExtraction:
                     ValueError("no contour was calculated")
                     continue
                 contours[orig_id][crop_id] = (contour_x, contour_y)
-                #self.plot(None, mask, contour=(contour_x, contour_y), show=self.config['tasks']['feature_extraction']['show_plots'])
 
                 curvature = self.calculate_curvature(contour_x, contour_y)
                 if curvature is None:
                     ValueError("no curvature was calculated")
                     continue
                 curvatures[orig_id][crop_id] = curvature
-                #self.plot(None, mask, contour=(contour_x, contour_y), curvature=curvature,
-                #          show=self.config['tasks']['feature_extraction']['show_plots'])
 
                 midline = self.get_midline(contour_x, contour_y)
                 if midline is None:
@@ -654,8 +632,6 @@ class FeatureExtraction:
                     ValueError("no endpoints were calculated")
                     continue
                 endpoints_s[orig_id][crop_id] = endpoints
-                #self.plot(None, mask, contour=(contour_x, contour_y), curvature=curvature, midline=midline, name=crop_id,
-                #          endpoints=endpoints, show=self.config['tasks']['feature_extraction']['show_plots'])
 
                 endpoint_coords = ((contour_x[endpoints[0]], contour_y[endpoints[0]]),
                                    (contour_x[endpoints[1]], contour_y[endpoints[1]]))
@@ -667,17 +643,12 @@ class FeatureExtraction:
                 shape_vector = shape_vector_results[0]
                 temp_features['shape'] = shape_vector
 
-                #self.plot(None, mask, contour=(contour_x, contour_y), curvature=curvature, midline=midline, name=crop_id,
-                #          endpoints=endpoints, extended_midline=extended_midline, shape=shape_vector_results,
-                #           show=self.config['tasks']['feature_extraction']['show_plots'])
-
                 px = self.config['tasks']['feature_extraction']['image_size']
                 cells, intensities = self.get_grid(shape_vector_results, crop, shifting)
                 temp_features['intensities'] = intensities
 
                 features.append(temp_features)
 
-                #midline_intersection_points, normals, max_distance
                 if cells is None:
                     ValueError("no grid was calculated")
                     continue
@@ -708,6 +679,8 @@ class FeatureExtraction:
         df = self.make_df(features)
         self.file_handler.save_df(df)
 
+        return df
+
     def extend_midline(self, midline, endpoints):
 
         start_point = np.array(endpoints[0])
@@ -716,8 +689,8 @@ class FeatureExtraction:
         start_midline = np.array(midline[0])
         end_midline = np.array(midline[-1])
 
-        option_1 = np.linalg.norm(start_point - start_midline) + np.linalg.norm(end_point - end_midline) # names alligned
-        option_2 = np.linalg.norm(start_point - end_midline) + np.linalg.norm(end_point - start_midline) # names misalligned
+        option_1 = np.linalg.norm(start_point - start_midline) + np.linalg.norm(end_point - end_midline)
+        option_2 = np.linalg.norm(start_point - end_midline) + np.linalg.norm(end_point - start_midline)
 
         if option_1 <= option_2: #
             extended_coords_ml = np.insert(midline, 0, start_point, axis=0)

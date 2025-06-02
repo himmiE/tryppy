@@ -25,7 +25,7 @@
       "num_points": 50
     },
     "classification": {
-      "enabled": false,
+      "enabled": true,
       "save_output": true
     }
   },

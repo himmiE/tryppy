@@ -1,9 +1,9 @@
-# NAME_OF_THE_PACKAGE
+# tryppy
 
-NAME_OF_THE_PACKAGE is an open source python package. It helps to easily perform segmentation, SOME_FEATURES and classification on microscopy data of trypanosoma brucei. The package has been build specifically on the tryptag dataset. The quality of the results on other microscopy data or even on other () has not been varified by us.
+tryppy is an open source python package. It helps to easily perform segmentation, feature extraction and classification on microscopy data of trypanosoma brucei. The package has been build specifically on the tryptag dataset. The quality of the results on other microscopy data has not been varified by us.
 
 ## How to install
-We provided several options to make the functionality of NAME_OF_THE_PACKAGE available to you. You can choose to install the package via pip or github into your python environment. Alternatively you can choose to use our code via the provided Docker container. This is especially usefull for an easy to use proof of concept, when trying out new data.
+We provided several options to make the functionality of tryppy available to you. You can choose to install the package via pip or github into your python environment. Alternatively you can choose to use our code via the provided Docker container. This is especially usefull for an easy to use proof of concept, when trying out new data.
 
 ### How to install with pip
 show installation

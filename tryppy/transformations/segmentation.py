@@ -1,7 +1,6 @@
 import numpy as np
 import skimage
-
-from src.transformations.model import Model
+from tryppy.transformations.model import Model
 
 
 class MaskExtraction:

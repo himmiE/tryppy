@@ -568,25 +568,25 @@ class FeatureExtraction:
         curvatures = dict()
         midlines = dict()
         endpoints_s = dict()
+        shapes = dict()
         grids = dict()
         data_structures = {
             'contour': contours,
             'curvature': curvatures,
             'midline': midlines,
             'endpoints': endpoints_s,
+            'shape': shapes,
             'grid': grids
         }
 
         if not masks:
             masks = self.file_handler.get_input_files(input_folder_name="mask", extension=".npy")
 
-        #datapoints_to_plot = []
         plot_features = self.config['tasks']['feature_extraction']['to_plot']
         save_plots = self.config['tasks']['feature_extraction']['save_plots']
         if plot_features and save_plots > 0:
             seed = self.config['seed']
             random.seed(seed)
-            #datapoints_to_plot = random.sample(list(list(masks.values()).keys()), min(save_plots, len(masks.keys())))
 
         features = []
         for orig_id, mask_dict in masks.items():
@@ -594,6 +594,7 @@ class FeatureExtraction:
             curvatures[orig_id] = {}
             midlines[orig_id] = {}
             endpoints_s[orig_id] = {}
+            shapes[orig_id] = {}
             grids[orig_id] = {}
 
             for crop_id, mask in mask_dict.items():
@@ -641,9 +642,9 @@ class FeatureExtraction:
 
                 shape_vector_results = self.get_shape_vector(contour, extended_midline)
                 shape_vector = shape_vector_results[0]
+                shapes[orig_id][crop_id] = shape_vector
                 temp_features['shape'] = shape_vector
 
-                px = self.config['tasks']['feature_extraction']['image_size']
                 cells, intensities = self.get_grid(shape_vector_results, crop, shifting)
                 temp_features['intensities'] = intensities
 
@@ -654,7 +655,6 @@ class FeatureExtraction:
                     continue
                 else:
                     grids[orig_id][crop_id] = intensities
-                #if crop_id in datapoints_to_plot:
                 self.plot(None, mask, contour=(contour_x, contour_y), curvature=curvature, midline=midline, name=crop_id,
                           endpoints=endpoints, extended_midline=extended_midline, shape=shape_vector_results,
                           grid=cells,
@@ -765,13 +765,13 @@ class FeatureExtraction:
             half = len(shape_array) / 2
             for i, val in enumerate(shape_array):
                 if i/half < 1:
-                    row[f'distance_{'left'}_{i}'] = val
+                    row[f"distance_{'left'}_{i}"] = val
                 else:
-                    row[f'distance_{'right'}_{i}'] = val
+                    row[f"distance_{'right'}_{i}"] = val
 
             # 1D array für Intensitäten
             for i, val in enumerate(entry['intensities']):
-                row[f'intensity_{i}'] = val
+                row[f"intensity_{i}"] = val
 
             flattened_data.append(row)
 

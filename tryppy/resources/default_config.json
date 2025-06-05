@@ -1,28 +1,33 @@
 {
+  "seed": 42,
   "model_name": "default",
   "input_folder_name": "input",
+  "input_extension": ".tif",
   "keep_input_filenames": true,
   "weights_path": "resources\\models\\default\\unet_model_30May24_Combined.weights.h5",
   "tasks": {
-    "segmentation": {
-      "enabled": false,
+    "full_image_masks": {
+      "enabled": true,
       "save_output": true
     },
-    "instance_segmentation": {
-      "enabled": false,
-      "save_output": true
+    "crop": {
+      "enabled": true,
+      "save_crop": true,
+      "save_mask": true
     },
     "feature_extraction": {
       "enabled": true,
-      "save_data": ["contour", "curvature", "midline", "endpoints", "grid"],
-      "save_plots": 4,
-      "plot_features": ["curvature", "endpoints"],
-      "grid_size": 320
+      "save_data": ["contour", "curvature", "midline", "endpoints", "shape", "grid"],
+      "save_plots": 100,
+      "to_plot": ["crop", "mask", "contour", "curvature", "midline", "endpoints", "grid"],
+      "image_size": 320,
+      "show_plots": false,
+      "num_points": 50
     },
     "classification": {
-      "enabled": false,
+      "enabled": true,
       "save_output": true
     }
   },
-  "output_dir": ""
+  "output_dir": "output"
 }

@@ -1,19 +1,18 @@
 import json
 import os
+import sys
+
 import numpy as np
 from pathlib import Path
 import skimage
 import joblib
 import pkgutil
 import io
-
-from src.feature_visualizer import FeatureVisualizer
-
+import sklearn
 
 class FileHandler:
     def __init__(self, data_dir):
         self.data_dir = Path(data_dir)
-        self.feature_visualizer = FeatureVisualizer()
 
     def get_image_path(self, folder_name, image_name):
         return folder_name / image_name
@@ -32,8 +31,6 @@ class FileHandler:
         df.to_csv(file_path, index=False)
 
     def get_input_files(self, input_folder_name="input", extension='tif'):
-        #keys_to_extract = ['Tb927.3.930_4_N_1_118_0']
-
         file_extensions = ('.jpg', '.png', '.jpeg', '.tif', '.npy')
         input_image_filenames = self.get_image_filenames_from(input_folder_name, file_extensions=file_extensions)
         input_images = {}
@@ -43,7 +40,6 @@ class FileHandler:
                     input_images[sub_dir] = {}
                     image_keys = ['.'.join(os.path.basename(f).split(".")[:-1]) for f in file_names]
                     temp_file_dict = {image_key: self.load_file(Path(f"{folder}/{sub_dir}/{image_key}{extension}")) for image_key in image_keys}
-                    #temp_file_dict = {k: v for k, v in temp_file_dict.items() if k in keys_to_extract}
                     input_images[sub_dir].update(temp_file_dict)
             else:
                 file_names = input_image_filenames[folder]
@@ -51,19 +47,32 @@ class FileHandler:
                 temp_file_dict = {image_key: self.load_file(Path(f"{folder}/{image_key}{extension}")) for
                                   image_key in image_keys}
                 input_images.update(temp_file_dict)
-
-
         return input_images
+
+    def count_leaf_values(self, d):
+        count = 0
+        for v in d.values():
+            if isinstance(v, dict):
+                count += self.count_leaf_values(v)
+            else:
+                count += 1
+        return count
 
     def get_image_filenames_from(self, folder_name, file_extensions=None):
         if file_extensions is None:
             file_extensions = "npy"
         folder_path = self.data_dir / folder_name
-        os.makedirs(folder_path, exist_ok=True)
+        if not os.path.exists(folder_path):
+            os.makedirs(folder_path, exist_ok=True)
+            print(f"❌ The required folder '{folder_path}' was not found.")
+            print("The folder has been created now. You need to include the associated data into the directory"
+                  "and restart the program")
+            sys.exit(1)
         filenames = {folder_path: []}
         for image_name in os.listdir(folder_path):
             if image_name.endswith(file_extensions):
                 filenames[folder_path].append(image_name)
+        count_files = len(filenames)
 
         if not filenames[folder_path]:
             filenames = {folder_path: {}}
@@ -73,10 +82,17 @@ class FileHandler:
                 for image_name in os.listdir(folder_path/image_dir):
                     if image_name.endswith(file_extensions):
                         filenames[folder_path][image_dir].append(image_name)
+        count_files = self.count_leaf_values(filenames)
 
-        count_files = len(filenames)
+        if not filenames[folder_path]:
+            print(f"❌ No {file_extensions}-files have been found at '{folder_path}'.")
+            print("Please include the associated data into the directory and restart the program.")
+            sys.exit(1)
+
+
         print(f"The path for your data is: {folder_path}")
         print(f"The directory contains {count_files} suitable image files.")
+        print(filenames)
         return filenames
 
     def save_images_to(self, folder_name, images):
@@ -109,11 +125,6 @@ class FileHandler:
         for file_name in data_dict:
             file_path = folder_path / filename
             np.save(file_path, data_dict[file_name])
-
-    '''def save_feature_data(self, feature, param): #Todo
-        if feature == "contour":
-            pass
-        pass'''
 
     def save_plot(self, folder_name, filename, plt):
         folder_path = self.data_dir / folder_name

@@ -1,6 +1,6 @@
 import pathlib
 import unittest
-from src.tryppy import Tryppy
+from tryppy.tryppy import Tryppy
 import matplotlib
 
 class TryptagTest(unittest.TestCase):

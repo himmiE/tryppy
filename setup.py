@@ -9,10 +9,15 @@ setup(
     long_description_content_type='text/markdown',
     url='https://github.com/deinname/dein_paket',
     packages=find_packages(),
+    include_package_data=True,
+    package_data={
+        "tryppy": ["resources/**/*"],
+    },
     install_requires=[
         'numpy',
         'scipy',
         'scikit-image',
+        'scikit-learn',
         'opencv-python',
         'spatial-efd',
         'tensorflow',

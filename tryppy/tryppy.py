@@ -2,16 +2,17 @@ import json
 import os
 import pkgutil
 
-from src.file_handler import FileHandler
-from src.transformations.classification import Classification
-from src.transformations.feature_extraction import FeatureExtraction
-from src.transformations.instance_segmentation import InstanceSegmentation
-from src.transformations.segmentation import MaskExtraction
+from tryppy.file_handler import FileHandler
+from tryppy.transformations.classification import Classification
+from tryppy.transformations.feature_extraction import FeatureExtraction
+from tryppy.transformations.instance_segmentation import InstanceSegmentation
+from tryppy.transformations.segmentation import MaskExtraction
 
 class Tryppy:
     def __init__(self, datapath, config_filename='config.json'):
         config_path = datapath / config_filename
 
+        os.makedirs(datapath, exist_ok=True)
         self.ensure_config_exists(config_path)
 
         with open(config_path, 'r') as config_file:
@@ -64,7 +65,7 @@ class Tryppy:
 
     def ensure_config_exists(self, config_path):
         if not os.path.isfile(config_path):
-            config_data = pkgutil.get_data(__name__, 'resources/default_config.json')
+            config_data = pkgutil.get_data("tryppy", "resources/default_config.json")
 
             # Schreibe die Datei an den Zielort
             with open(config_path, 'wb') as f:

@@ -6,17 +6,16 @@ It has been developed specifically for the **TrypTag** dataset. The performance 
 ## How to install
 We provided several options to make the functionality of tryppy available to you. You can choose to install the package via pip or github into your python environment. Alternatively you can choose to use our code via the provided Docker container. This is especially usefull for an easy to use proof of concept, when trying out new data.
 
-### From Pip
+### From Pypi
 ```pip install tryppy```
 
-Here you find the [official pip website](TODO).
+Here you find the [official pypi website](TODO).
 
 ### From Github
 ```pip install git+https://github.com/himmiE/tryppy.git```
 
-### How to install using docker
-An official Docker image is available to run `tryppy` without installing Python or any dependencies locally.
 ### Using Docker Hub (recommended)
+An official Docker image is available to run `tryppy` without installing Python or any dependencies locally.
 If you have Docker installed, you can pull the latest image with:
 
 ```docker build -t tryppy:latest .```

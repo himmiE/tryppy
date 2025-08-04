@@ -16,8 +16,9 @@ class Tryppy:
         self.ensure_config_exists(config_path)
 
         with open(config_path, 'r') as config_file:
-            self.config = json.load(config_file)
-            self.file_handler = FileHandler(datapath)
+            config = json.load(config_file)
+            self.config = config
+            self.file_handler = FileHandler(datapath, config)
 
         import warnings
         warnings.filterwarnings("ignore")
@@ -36,7 +37,8 @@ class Tryppy:
         result = {}
         if self.config['tasks']['full_image_masks']['enabled']:
             print("generating mask from input")
-            full_image_masks = MaskExtraction().run(images)
+            self.file_handler.ensure_unet_model()
+            full_image_masks = MaskExtraction(self.config['weights_path']).run(images)
             if self.config['tasks']['full_image_masks']['save_output']:
                 self.file_handler.save_images_to("full_image_masks", full_image_masks)
 

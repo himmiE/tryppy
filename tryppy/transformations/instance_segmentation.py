@@ -1,11 +1,6 @@
-import os
-import os.path
 import numpy as np
 import skimage
 import skimage.io
-import tqdm
-from tifffile import tifffile
-from tifffile.tifffile import TiffFile
 
 class InstanceSegmentation:
     def __init__(self, fileHandler):

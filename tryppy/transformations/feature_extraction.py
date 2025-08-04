@@ -167,11 +167,6 @@ class FeatureExtraction:
             ax.add_patch(patch)
 
     def sort_corners_clockwise(self, pts):
-        """
-        Sortiert 4 Punkte im Uhrzeigersinn um ihren Schwerpunkt.
-        :param pts: Liste oder Array von 4 (x, y)-Punkten
-        :return: sortiertes Array von Punkten
-        """
         pts = np.array(pts)
         centroid = np.mean(pts, axis=0)  # Schwerpunkt
         angles = np.arctan2(pts[:, 1] - centroid[1], pts[:, 0] - centroid[0])
@@ -183,7 +178,7 @@ class FeatureExtraction:
         contours = skimage.measure.find_contours(image, 0.8)
 
         if not contours:
-            print("No contours found, using 0.5 as area threshold")
+            #print("No contours found, using 0.5 as area threshold")
             contours = skimage.measure.find_contours(image, 0.5)
 
 
@@ -369,7 +364,7 @@ class FeatureExtraction:
             length = quad(integrand, a, b)[0]
         return length
 
-    def find_point_on_boundary(self, boundary, point, distance):
+    '''def find_point_on_boundary(self, boundary, point, distance):
         """
         Finds a point on the boundary that is at a specified distance from a given point on the boundary.
         If no point is found at the specified distance, find the point closest to that distance.
@@ -390,29 +385,21 @@ class FeatureExtraction:
         if closest_point > 1e-6:
             warnings.warn("Closest point found on boundary is no exact match.")
 
-        return closest_point  # Return the closest point if no exact match is found
+        return closest_point  # Return the closest point if no exact match is found'''
 
     # Generic function to find the first intersection based on direction
     def find_first_intersection(self, normal_x, normal_y, x0, y0, boundary_x, boundary_y, direction, ray_length=1000):
-        # Richtungsvektor skalieren
         dx = direction * normal_x
         dy = direction * normal_y
-
-        # Strahl definieren
         start = (x0, y0)
         end = (x0 + dx * ray_length, y0 + dy * ray_length)
         ray = LineString([start, end])
-
-        # Kontur als LineString
         boundary = LineString(zip(boundary_x, boundary_y))
-
-        # Schnittpunkt berechnen
         inter = ray.intersection(boundary)
 
         if inter.is_empty:
             return None
 
-        # Mehrere Schnittpunkte → nimm den nächsten
         if inter.geom_type == 'MultiPoint':
             points = list(inter.geoms)
             points.sort(key=lambda pt: Point(start).distance(pt))
@@ -421,8 +408,6 @@ class FeatureExtraction:
 
         elif inter.geom_type == 'Point':
             return inter.x, inter.y
-
-        # Sonst kein gültiger Schnittpunkt
         return None
 
     # Function to compute intersections and distances
@@ -778,7 +763,3 @@ class FeatureExtraction:
         # DataFrame erzeugen
         df = pd.DataFrame(flattened_data)
         return df
-
-
-
-

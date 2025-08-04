@@ -7,11 +7,9 @@ import pathlib
 
 
 class Model:
-    def __init__(self, model_name="default", verbose=1):
+    def __init__(self, weights_path):
         current_dir = pathlib.Path(__file__).parent.parent
-        model_dir = current_dir / "resources" / "models" / model_name
-        self.weights_path = model_dir / "model_data.weights.h5"
-        self.model_name = model_name
+        self.weights_path = current_dir / weights_path
         self.unet = None
 
     def double_conv_block(self, x, n_filters):

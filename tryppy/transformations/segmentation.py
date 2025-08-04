@@ -4,10 +4,9 @@ from tryppy.transformations.model import Model
 
 
 class MaskExtraction:
-    def __init__(self, model_name="default"):
-        self.model_name = model_name
+    def __init__(self, weights_path):
         self.model = None
-        self.load_model()
+        self.load_model(weights_path)
 
     def change_model(self, model_name="default"):
         self.model_name = model_name
@@ -34,8 +33,8 @@ class MaskExtraction:
         #print(f"The directory could {data_path_exists}be found. It contains {files} image files")
         return
 
-    def load_model(self):
-        self.model = Model(self.model_name)
+    def load_model(self, weights_path):
+        self.model = Model(weights_path)
         self.model.load_model()
 
     def get_needed_padding(self, height, width, patch_height, patch_width):

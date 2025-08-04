@@ -1,0 +1,2 @@
+include README.md
+recursive-include tryppy/resources/rf_model *

@@ -1,6 +1,8 @@
 import json
 import os
+import pathlib
 import sys
+import urllib
 
 import numpy as np
 from pathlib import Path
@@ -11,8 +13,9 @@ import io
 import sklearn
 
 class FileHandler:
-    def __init__(self, data_dir):
+    def __init__(self, data_dir, config):
         self.data_dir = Path(data_dir)
+        self.config = config
 
     def get_image_path(self, folder_name, image_name):
         return folder_name / image_name
@@ -142,3 +145,14 @@ class FileHandler:
         label_encoder = joblib.load(io.BytesIO(label_encoder_data))
         return model, label_encoder
 
+    def ensure_unet_model(self):
+        current_dir = pathlib.Path(__file__).parent
+        local_path = current_dir / self.config["weights_path"]
+        unet_found = os.path.exists(local_path)
+        if unet_found:
+            print("found weights for unet")
+            return
+        else:
+            print(f"No weights found at {local_path}. Downloading unet model weights...")
+            os.makedirs(os.path.dirname(local_path), exist_ok=True)
+            urllib.request.urlretrieve(self.config["model_url"], local_path)

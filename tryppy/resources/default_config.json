@@ -5,6 +5,7 @@
   "input_extension": ".tif",
   "keep_input_filenames": true,
   "weights_path": "resources\\models\\default\\unet_model_30May24_Combined.weights.h5",
+  "model_url": "https://github.com/himmiE/tryppy/releases/download/v0.1.0-models/model_data.weights.h5",
   "tasks": {
     "full_image_masks": {
       "enabled": true,

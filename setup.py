@@ -8,6 +8,7 @@ setup(
     long_description=open('README.md').read(),
     long_description_content_type='text/markdown',
     url='https://github.com/deinname/dein_paket',
+    license='MIT',
     packages=find_packages(),
     include_package_data=True,
     package_data={

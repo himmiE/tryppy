@@ -68,8 +68,8 @@ class FileHandler:
         if not os.path.exists(folder_path):
             os.makedirs(folder_path, exist_ok=True)
             print(f"❌ The required folder '{folder_path}' was not found.")
-            print("The folder has been created now. You need to include the associated data into the directory"
-                  "and restart the program")
+            print("The folder has been created now. You need to include the associated data into the directory "
+                  "and restart the program.")
             sys.exit(1)
         filenames = {folder_path: []}
         for image_name in os.listdir(folder_path):
@@ -92,10 +92,8 @@ class FileHandler:
             print("Please include the associated data into the directory and restart the program.")
             sys.exit(1)
 
-
         print(f"The path for your data is: {folder_path}")
         print(f"The directory contains {count_files} suitable image files.")
-        print(filenames)
         return filenames
 
     def save_images_to(self, folder_name, images):
@@ -153,6 +151,7 @@ class FileHandler:
             print("found weights for unet")
             return
         else:
-            print(f"No weights found at {local_path}. Downloading unet model weights...")
+            print(f"No weights found at {local_path}. "
+                  f"Downloading unet model weights...")
             os.makedirs(os.path.dirname(local_path), exist_ok=True)
             urllib.request.urlretrieve(self.config["model_url"], local_path)

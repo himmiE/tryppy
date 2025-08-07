@@ -1,2 +1,3 @@
 include README.md
+include tryppy/resources/default_config.json
 recursive-include tryppy/resources/rf_model *

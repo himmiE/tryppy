@@ -7,13 +7,11 @@ setup(
     description='Kurze Beschreibung deines Pakets',
     long_description=open('README.md').read(),
     long_description_content_type='text/markdown',
-    url='https://github.com/deinname/dein_paket',
+    url='https://github.com/himmiE/tryppy',
     license='MIT',
     packages=find_packages(),
     include_package_data=True,
-    package_data={
-        "tryppy": ["resources/**/*"],
-    },
+    package_data={},
     install_requires=[
         'numpy',
         'scipy',
